@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../../Desktop/esp32"
+		},
+		{
+			"name": "powermetrics",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
