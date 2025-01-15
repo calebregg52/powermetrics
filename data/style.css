@@ -1,0 +1,45 @@
+body {
+    background-color: #e9ecef; /* Light gray background */
+}
+.meter-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #007bff;
+}
+.navbar {
+    background-color: #343a40;
+    color: white;
+    border-radius: 15px;
+    padding: 15px;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.navbar-brand img {
+    height: 50px;
+    border-radius: 50%;
+}
+.navbar-title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+}
+.custom-card {
+    background-color: #f8f9fa; /* Light gray */
+    border: 1px solid #dee2e6;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.chart-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%; /* Ensures it takes the full height of the card */
+    padding: 10px; /* Optional padding */
+}
