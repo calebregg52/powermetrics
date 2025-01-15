@@ -24,44 +24,15 @@
       width: 100%;
       height: 400px;
     }
-    .gauge {
-      width: 100%;
-      height: 30px;
-      background-color: #ddd;
-      border: 2px solid #333;
-      overflow: hidden;
-      border-radius: 5px;
-      margin-top: 10px;
-    }
-    .gauge-fill {
-      height: 100%;
-      width: 0%;
-      background-color: green;
-      transition: width 0.2s, background-color 0.2s;
-    }
-    .gauge-label {
-      text-align: center;
-      margin-top: 5px;
-      font-size: 16px;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
   <div id="graphs-container">
     <div class="graph-container">
       <canvas id="voltage-graph"></canvas>
-      <div class="gauge" id="voltage-gauge">
-        <div class="gauge-fill" id="voltage-fill"></div>
-      </div>
-      <p class="gauge-label">Voltage: <span id="voltage-value">0</span> V</p>
     </div>
     <div class="graph-container">
       <canvas id="current-graph"></canvas>
-      <div class="gauge" id="current-gauge">
-        <div class="gauge-fill" id="current-fill"></div>
-      </div>
-      <p class="gauge-label">Current: <span id="current-value">0</span> A</p>
     </div>
   </div>
 
@@ -69,10 +40,6 @@
     (function() {
       const voltageCtx = document.getElementById('voltage-graph').getContext('2d');
       const currentCtx = document.getElementById('current-graph').getContext('2d');
-      const voltageFill = document.getElementById('voltage-fill');
-      const voltageValue = document.getElementById('voltage-value');
-      const currentFill = document.getElementById('current-fill');
-      const currentValue = document.getElementById('current-value');
 
       const maxDataPoints = 100;
       let timeIndex = 0;
@@ -100,6 +67,10 @@
               type: 'linear',
               min: 0,
               max: maxDataPoints,
+              ticks: {
+                autoSkip: true,
+                maxTicksLimit: 10
+              },
               title: {
                 display: true,
                 text: 'Time (s)'
@@ -138,6 +109,10 @@
               type: 'linear',
               min: 0,
               max: maxDataPoints,
+              ticks: {
+                autoSkip: true,
+                maxTicksLimit: 10
+              },
               title: {
                 display: true,
                 text: 'Time (s)'
@@ -159,17 +134,17 @@
         const simulatedVoltage = Math.sin(timeIndex / 5) * 10 + 20;
         const simulatedCurrent = Math.cos(timeIndex / 5) * 2 + 5;
 
+        if (voltageData.length >= maxDataPoints) voltageData.shift();
+        if (currentData.length >= maxDataPoints) currentData.shift();
+
         voltageData.push({ x: timeIndex, y: simulatedVoltage });
         currentData.push({ x: timeIndex, y: simulatedCurrent });
 
-        if (voltageData.length > maxDataPoints) voltageData.shift();
-        if (currentData.length > maxDataPoints) currentData.shift();
+        voltageGraph.options.scales.x.min = timeIndex - maxDataPoints + 1;
+        voltageGraph.options.scales.x.max = timeIndex;
 
-        voltageFill.style.width = `${(simulatedVoltage / 40) * 100}%`;
-        voltageValue.textContent = simulatedVoltage.toFixed(1);
-
-        currentFill.style.width = `${(simulatedCurrent / 20) * 100}%`;
-        currentValue.textContent = simulatedCurrent.toFixed(2);
+        currentGraph.options.scales.x.min = timeIndex - maxDataPoints + 1;
+        currentGraph.options.scales.x.max = timeIndex;
 
         voltageGraph.update();
         currentGraph.update();
