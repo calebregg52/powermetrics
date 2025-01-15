@@ -3,40 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Powermetrics</title>
+  <title>Powermetrics Oscilloscope</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       background-color: #ede7d7;
       font-family: Arial, sans-serif;
-    }
-    #navbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #333;
-      padding: 10px 20px;
-      border-radius: 10px;
-    }
-    #navbar-title {
-      color: white;
-      font-size: 20px;
-      font-weight: bold;
-    }
-    #nav-links {
-      display: flex;
-      gap: 15px;
-    }
-    #nav-links a {
-      color: white;
-      text-decoration: none;
-      padding: 10px 15px;
-      font-size: 16px;
-      border-radius: 5px;
-      transition: background-color 0.3s;
-    }
-    #nav-links a:hover {
-      background-color: #555;
     }
     #graphs-container {
       display: flex;
@@ -52,158 +24,90 @@
       width: 100%;
       height: 400px;
     }
-    #gauges-container {
-      display: flex;
-      justify-content: space-around;
-      max-width: 900px;
-      margin: 20px auto;
-      flex-wrap: wrap;
-      gap: 20px;
-    }
     .gauge {
-      position: relative;
-      width: 80%;
+      width: 100%;
       height: 30px;
       background-color: #ddd;
       border: 2px solid #333;
       overflow: hidden;
       border-radius: 5px;
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
     .gauge-fill {
       height: 100%;
       width: 0%;
       background-color: green;
-      transition: width 0.5s, background-color 0.5s;
+      transition: width 0.2s, background-color 0.2s;
     }
     .gauge-label {
-      margin-top: 10px;
-      font-size: 18px;
+      text-align: center;
+      margin-top: 5px;
+      font-size: 16px;
       font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <!-- Navbar -->
-  <div id="navbar">
-    <span id="navbar-title">Powermetrics</span>
-    <div id="nav-links">
-      <a>Contact</a>
-    </div>
-  </div>
-
-  <!-- Voltage and Current Graphs -->
   <div id="graphs-container">
     <div class="graph-container">
       <canvas id="voltage-graph"></canvas>
+      <div class="gauge" id="voltage-gauge">
+        <div class="gauge-fill" id="voltage-fill"></div>
+      </div>
+      <p class="gauge-label">Voltage: <span id="voltage-value">0</span> V</p>
     </div>
     <div class="graph-container">
       <canvas id="current-graph"></canvas>
+      <div class="gauge" id="current-gauge">
+        <div class="gauge-fill" id="current-fill"></div>
+      </div>
+      <p class="gauge-label">Current: <span id="current-value">0</span> A</p>
     </div>
-  </div>
-
-  <!-- Voltage and Current Gauges -->
-  <div id="gauges-container">
-    <!-- Voltage Gauge -->
-    <div class="gauge" id="voltage-gauge">
-      <div class="gauge-fill" id="voltage-fill"></div>
-    </div>
-    <p class="gauge-label">Voltage: <span id="voltage-value">0</span> V</p>
-
-    <!-- Current Gauge -->
-    <div class="gauge" id="current-gauge">
-      <div class="gauge-fill" id="current-fill"></div>
-    </div>
-    <p class="gauge-label">Current: <span id="current-value">0</span> A</p>
   </div>
 
   <script>
-    // Navbar Styling
-    (function() {
-      const links = document.querySelectorAll('#nav-links a');
-      links.forEach(link => {
-        link.addEventListener('mouseover', () => {
-          link.style.backgroundColor = '#555';
-        });
-        link.addEventListener('mouseout', () => {
-          link.style.backgroundColor = 'transparent';
-        });
-      });
-    })();
-
-    // Gauge Logic
-    (function() {
-      // Voltage Gauge
-      const voltageFill = document.getElementById('voltage-fill');
-      const voltageValue = document.getElementById('voltage-value');
-
-      // Current Gauge
-      const currentFill = document.getElementById('current-fill');
-      const currentValue = document.getElementById('current-value');
-
-      // Update Voltage
-      function updateVoltage(voltage) {
-        const percentage = (voltage / 35) * 100;
-        voltageValue.textContent = voltage.toFixed(1);
-        voltageFill.style.width = `${percentage}%`;
-        voltageFill.style.backgroundColor = voltage < 25 ? 'green' : voltage < 35 ? 'orange' : 'red';
-      }
-
-      // Update Current
-      function updateCurrent(current) {
-        const percentage = (current / 2) * 100;
-        currentValue.textContent = current.toFixed(2);
-        currentFill.style.width = `${percentage}%`;
-        currentFill.style.backgroundColor = current < 1.5 ? 'green' : current < 2 ? 'orange' : 'red';
-      }
-
-      // Simulate updating voltage and current every second
-      setInterval(() => {
-        const simulatedVoltage = Math.random() * 40;
-        const simulatedCurrent = Math.random() * 2;
-        updateVoltage(simulatedVoltage);
-        updateCurrent(simulatedCurrent);
-      }, 1000);
-    })();
-
-    // Graphs Setup
     (function() {
       const voltageCtx = document.getElementById('voltage-graph').getContext('2d');
       const currentCtx = document.getElementById('current-graph').getContext('2d');
+      const voltageFill = document.getElementById('voltage-fill');
+      const voltageValue = document.getElementById('voltage-value');
+      const currentFill = document.getElementById('current-fill');
+      const currentValue = document.getElementById('current-value');
 
-      let timeData = [];
-      let voltageData = [];
-      let currentData = [];
+      const maxDataPoints = 100;
       let timeIndex = 0;
+      const voltageData = [];
+      const currentData = [];
 
       const voltageGraph = new Chart(voltageCtx, {
         type: 'line',
         data: {
-          labels: timeData,
           datasets: [{
             label: 'Voltage (V)',
             data: voltageData,
             borderColor: 'rgba(75, 192, 192, 1)',
-            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-            fill: true,
-            lineTension: 0.1,
-            borderWidth: 2
+            borderWidth: 2,
+            fill: false,
+            lineTension: 0
           }]
         },
         options: {
+          animation: false,
           responsive: true,
           maintainAspectRatio: false,
           scales: {
             x: {
               type: 'linear',
-              position: 'bottom',
+              min: 0,
+              max: maxDataPoints,
               title: {
                 display: true,
                 text: 'Time (s)'
               }
             },
             y: {
-              beginAtZero: true,
+              min: 0,
+              max: 40,
               title: {
                 display: true,
                 text: 'Voltage (V)'
@@ -216,31 +120,32 @@
       const currentGraph = new Chart(currentCtx, {
         type: 'line',
         data: {
-          labels: timeData,
           datasets: [{
             label: 'Current (A)',
             data: currentData,
             borderColor: 'rgba(192, 75, 75, 1)',
-            backgroundColor: 'rgba(192, 75, 75, 0.2)',
-            fill: true,
-            lineTension: 0.1,
-            borderWidth: 2
+            borderWidth: 2,
+            fill: false,
+            lineTension: 0
           }]
         },
         options: {
+          animation: false,
           responsive: true,
           maintainAspectRatio: false,
           scales: {
             x: {
               type: 'linear',
-              position: 'bottom',
+              min: 0,
+              max: maxDataPoints,
               title: {
                 display: true,
                 text: 'Time (s)'
               }
             },
             y: {
-              beginAtZero: true,
+              min: 0,
+              max: 20,
               title: {
                 display: true,
                 text: 'Current (A)'
@@ -251,24 +156,26 @@
       });
 
       setInterval(() => {
-        const simulatedVoltage = Math.sin(timeIndex / 10) * 10 + 20;
-        const simulatedCurrent = Math.cos(timeIndex / 10) * 5 + 10;
+        const simulatedVoltage = Math.sin(timeIndex / 5) * 10 + 20;
+        const simulatedCurrent = Math.cos(timeIndex / 5) * 2 + 5;
 
-        if (timeData.length > 100) {
-          timeData.shift();
-          voltageData.shift();
-          currentData.shift();
-        }
+        voltageData.push({ x: timeIndex, y: simulatedVoltage });
+        currentData.push({ x: timeIndex, y: simulatedCurrent });
 
-        timeData.push(timeIndex);
-        voltageData.push(simulatedVoltage);
-        currentData.push(simulatedCurrent);
+        if (voltageData.length > maxDataPoints) voltageData.shift();
+        if (currentData.length > maxDataPoints) currentData.shift();
+
+        voltageFill.style.width = `${(simulatedVoltage / 40) * 100}%`;
+        voltageValue.textContent = simulatedVoltage.toFixed(1);
+
+        currentFill.style.width = `${(simulatedCurrent / 20) * 100}%`;
+        currentValue.textContent = simulatedCurrent.toFixed(2);
 
         voltageGraph.update();
         currentGraph.update();
 
         timeIndex++;
-      }, 1000);
+      }, 100);
     })();
   </script>
 </body>
