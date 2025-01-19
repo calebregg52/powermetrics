@@ -53,8 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function updateData() {
-      const randomVoltage = Math.random() * 60 - 30;
-      const randomCurrent = Math.random() * 3;
+      const randomVoltage = Math.random() * 70 - 30;
+      const randomCurrent = Math.random() * 4;
 
       // Update the charts
       voltageData.datasets[0].data.shift();
