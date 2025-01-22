@@ -1,90 +1,64 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const voltageCtx = document.getElementById('voltageGraph').getContext('2d');
-  const currentCtx = document.getElementById('currentGraph').getContext('2d');
-  const voltageGauge = document.getElementById('voltage-value');
-  const currentGauge = document.getElementById('current-value');
-  const voltageAlert = document.getElementById('volt-alert');
-  const currentAlert = document.getElementById('curr-alert');
+    const voltageCtx = document.getElementById('voltageGraph').getContext('2d');
+    const voltageGauge = document.getElementById('voltage-value');
+    const voltageAlert = document.getElementById('volt-alert');
 
-  const voltageData = {
-      labels: Array(50).fill(''),
-      datasets: [{
-          label: 'Voltage',
-          data: Array(50).fill(0),
-          borderColor: 'blue',
-          borderWidth: 1,
-          fill: false,
-      }]
-  };
+    const voltageData = {
+        labels: Array(50).fill(''),
+        datasets: [{
+            label: 'Voltage',
+            data: Array(50).fill(0),
+            borderColor: 'blue',
+            borderWidth: 1,
+            fill: false,
+        }]
+    };
 
-  const currentData = {
-      labels: Array(50).fill(''),
-      datasets: [{
-          label: 'Current',
-          data: Array(50).fill(0),
-          borderColor: 'green',
-          borderWidth: 1,
-          fill: false,
-      }]
-  };
+    const voltageChart = new Chart(voltageCtx, {
+        type: 'line',
+        data: voltageData,
+        options: {
+            responsive: true,
+            scales: {
+                x: { display: false },
+                y: { beginAtZero: true }
+            }
+        }
+    });
 
-  const voltageChart = new Chart(voltageCtx, {
-      type: 'line',
-      data: voltageData,
-      options: {
-          responsive: true,
-          scales: {
-              x: { display: false },
-              y: { beginAtZero: true }
-          }
-      }
-  });
+    // WebSocket setup
+    const socket = new WebSocket(`ws://${window.location.hostname}:81`);
 
-  const currentChart = new Chart(currentCtx, {
-      type: 'line',
-      data: currentData,
-      options: {
-          responsive: true,
-          scales: {
-              x: { display: false },
-              y: { beginAtZero: true }
-          }
-      }
-  });
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const voltage = data.voltage;
 
-  function updateData() {
-      const randomVoltage = Math.random() * 70 - 30;
-      const randomCurrent = Math.random() * 4;
+        // Update the voltage chart
+        voltageData.datasets[0].data.shift();
+        voltageData.datasets[0].data.push(voltage);
+        voltageChart.update();
 
-      // Update the charts
-      voltageData.datasets[0].data.shift();
-      voltageData.datasets[0].data.push(randomVoltage);
-      voltageChart.update();
+        // Update the voltage gauge
+        voltageGauge.textContent = `${voltage.toFixed(2)} V`;
 
-      currentData.datasets[0].data.shift();
-      currentData.datasets[0].data.push(randomCurrent);
-      currentChart.update();
+        // Overvoltage detection
+        if (voltage > 30 || voltage < -30) {
+            voltageAlert.textContent = 'OVERLOAD!';
+            voltageAlert.style.color = 'red';
+        } else {
+            voltageAlert.textContent = '';
+        }
+    };
 
-      // Update gauges
-      voltageGauge.textContent = `${randomVoltage.toFixed(2)} V`;
-      currentGauge.textContent = `${randomCurrent.toFixed(2)} A`;
+    socket.onopen = () => {
+        console.log('WebSocket connection established');
+    };
 
-      // Overvoltage detection
-      if (randomVoltage > 30 || randomVoltage < -30) {
-          voltageAlert.textContent = 'OVERLOAD!';
-          voltageAlert.style.color = 'red';
-      } else {
-          voltageAlert.textContent = '';
-      }
+    socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
 
-      // Overcurrent detection
-      if (randomCurrent > 3) {
-          currentAlert.textContent = 'OVERLOAD!';
-          currentAlert.style.color = 'red';
-      } else {
-          currentAlert.textContent = '';
-      }
-  }
-
-  setInterval(updateData, 1000);
+    socket.onclose = () => {
+        console.warn('WebSocket connection closed');
+    };
 });
