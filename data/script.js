@@ -1,90 +1,80 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const voltageCtx = document.getElementById('voltageGraph').getContext('2d');
-  const currentCtx = document.getElementById('currentGraph').getContext('2d');
-  const voltageGauge = document.getElementById('voltage-value');
-  const currentGauge = document.getElementById('current-value');
-  const voltageAlert = document.getElementById('volt-alert');
-  const currentAlert = document.getElementById('curr-alert');
+    const voltageCtx = document.getElementById('voltageGraph').getContext('2d');
+    const voltageGauge = document.getElementById('voltage-value');
+    const voltageAlert = document.getElementById('volt-alert');
 
-  const voltageData = {
-      labels: Array(50).fill(''),
-      datasets: [{
-          label: 'Voltage',
-          data: Array(50).fill(0),
-          borderColor: 'blue',
-          borderWidth: 1,
-          fill: false,
-      }]
-  };
+    const voltageData = {
+        labels: Array(50).fill(''),
+        datasets: [{
+            label: 'Voltage',
+            data: Array(50).fill(0),
+            borderColor: 'blue',
+            borderWidth: 1,
+            fill: false,
+        }]
+    };
 
-  const currentData = {
-      labels: Array(50).fill(''),
-      datasets: [{
-          label: 'Current',
-          data: Array(50).fill(0),
-          borderColor: 'green',
-          borderWidth: 1,
-          fill: false,
-      }]
-  };
+    const voltageChart = new Chart(voltageCtx, {
+        type: 'line',
+        data: voltageData,
+        options: {
+            responsive: true,
+            scales: {
+                x: { display: false },
+                y: {
+                    beginAtZero: false, // Allow dynamic range
+                }
+            }
+        }
+    });
 
-  const voltageChart = new Chart(voltageCtx, {
-      type: 'line',
-      data: voltageData,
-      options: {
-          responsive: true,
-          scales: {
-              x: { display: false },
-              y: { beginAtZero: true }
-          }
-      }
-  });
+    // Establish WebSocket connection
+    const ws = new WebSocket(`ws://${window.location.hostname}:81/`);
 
-  const currentChart = new Chart(currentCtx, {
-      type: 'line',
-      data: currentData,
-      options: {
-          responsive: true,
-          scales: {
-              x: { display: false },
-              y: { beginAtZero: true }
-          }
-      }
-  });
+    ws.onopen = () => {
+        console.log("WebSocket connected.");
+    };
 
-  function updateData() {
-      const randomVoltage = Math.random() * 70 - 30;
-      const randomCurrent = Math.random() * 4;
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            const voltage = parseFloat(data.voltage).toFixed(3);
 
-      // Update the charts
-      voltageData.datasets[0].data.shift();
-      voltageData.datasets[0].data.push(randomVoltage);
-      voltageChart.update();
+            // Update the voltage chart
+            voltageData.datasets[0].data.shift();
+            voltageData.datasets[0].data.push(voltage);
 
-      currentData.datasets[0].data.shift();
-      currentData.datasets[0].data.push(randomCurrent);
-      currentChart.update();
+            // Dynamically adjust Y-axis limits
+            const minVoltage = Math.min(...voltageData.datasets[0].data);
+            const maxVoltage = Math.max(...voltageData.datasets[0].data);
 
-      // Update gauges
-      voltageGauge.textContent = `${randomVoltage.toFixed(2)} V`;
-      currentGauge.textContent = `${randomCurrent.toFixed(2)} A`;
+            if (maxVoltage < 1 && minVoltage > 0) {
+                voltageChart.options.scales.y.min = 0;
+                voltageChart.options.scales.y.max = 1;
+            } else {
+                const padding = 2; // Add padding for better visualization
+                voltageChart.options.scales.y.min = Math.floor(minVoltage) - padding;
+                voltageChart.options.scales.y.max = Math.ceil(maxVoltage) + padding;
+            }
 
-      // Overvoltage detection
-      if (randomVoltage > 30 || randomVoltage < -30) {
-          voltageAlert.textContent = 'OVERLOAD!';
-          voltageAlert.style.color = 'red';
-      } else {
-          voltageAlert.textContent = '';
-      }
+            voltageChart.update();
 
-      // Overcurrent detection
-      if (randomCurrent > 3) {
-          currentAlert.textContent = 'OVERLOAD!';
-          currentAlert.style.color = 'red';
-      } else {
-          currentAlert.textContent = '';
-      }
-  }
+            // Update the voltage gauge
+            voltageGauge.textContent = `${voltage} V`;
 
-  setInterval(updateData, 1000);
+            // Overvoltage detection
+            if (voltage > 30 || voltage < -30) {
+                voltageAlert.textContent = 'OVERLOAD!';
+                voltageAlert.style.color = 'red';
+            } else {
+                voltageAlert.textContent = '';
+            }
+        } catch (error) {
+            console.error("Error parsing WebSocket data:", error);
+        }
+    };
+
+    ws.onclose = () => {
+        console.log("WebSocket disconnected.");
+    };
 });
