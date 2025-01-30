@@ -1,3 +1,4 @@
+#include <Wire.h>
 #include <Arduino.h>
 #include "FS.h"
 #include <WiFi.h>
@@ -8,58 +9,85 @@
 #include <WebSocketsServer.h>
 #include <WiFiManager.h>
 
-// Definitions
-#define LED_BUILTIN 2
-#define VOLT_SENSOR_PIN 35 // ADC pin for voltage sensor
-#define V_REF 3.7          // ESP32 reference voltage
-#define MAX_ADC 4095.0     // 12-bit ADC resolution
-
 bool WIFI_CONNECT_FLAG = false;
+#define LED_BUILTIN 2
+
 WebSocketsServer webSocket(81);
 WebServer server(80);
 
-// Function to list files in SPIFFS
+#define SDA_PIN 21
+#define SCL_PIN 22
+#define I2C_ADDRESS 0x68 // MCP3426 I2C address
+
+int16_t readADC()
+{
+    Wire.requestFrom(I2C_ADDRESS, 2);
+    if (Wire.available() == 2)
+    {
+        uint8_t highByte = Wire.read();
+        uint8_t lowByte = Wire.read();
+        return (int16_t)((highByte << 8) | lowByte);
+    }
+    Serial.println("Error: No data received!");
+    return 0;
+}
+
 void listFiles()
 {
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  while (file)
-  {
-    Serial.printf("File: %s, Size: %d bytes\n", file.name(), file.size());
-    file = root.openNextFile();
-  }
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    while (file)
+    {
+        Serial.print("File: ");
+        Serial.print(file.name());
+        Serial.print(" Size: ");
+        Serial.println(file.size());
+        file = root.openNextFile();
+    }
 }
 
 void setup()
 {
-  Serial.begin(115200);
-  Serial.println("Booting ESP32...");
+    Serial.begin(115200);    // begin serial output
+    WiFiManager wifiManager; // wifimanager handler
+    Serial.println("Booting ESP32...");
 
-  // Mount SPIFFS
-  if (SPIFFS.begin(true))
-  {
-    Serial.println("SPIFFS mounted successfully");
-    listFiles(); // Optional: Debugging to verify files
-  }
-  else
-  {
-    Serial.println("Failed to mount SPIFFS");
-    return; // Exit if SPIFFS fails
-  }
+    Wire.begin(SDA_PIN, SCL_PIN); // Initialize I2C
 
-  // Connect to WiFi using WiFiManager
-  WiFiManager wifiManager;
-  if (!wifiManager.autoConnect("ESP32-Setup"))
-  {
-    Serial.println("Failed to connect to WiFi. Rebooting...");
-    ESP.restart();
-  }
-  Serial.println("Connected to WiFi. IP Address: " + WiFi.localIP().toString());
+    Serial.println("Initializing MCP3426 ADC...");
 
-  // Start WebSocket server
-  webSocket.begin();
-  webSocket.onEvent([](uint8_t num, WStype_t type, uint8_t *payload, size_t length)
-                    {
+    // Set Configuration Register for CH1, 16-bit mode, Continuous Conversion, PGA = 1
+    Wire.beginTransmission(I2C_ADDRESS);
+    Wire.write(0b10011000); // 16-bit, Continuous, Gain=1, CH1
+    Wire.endTransmission();
+
+    // Start the captive portal
+    if (!wifiManager.autoConnect("ESP32-Setup"))
+    {
+        Serial.println("Failed to connect. Rebooting...");
+        ESP.restart();
+    }
+
+    // Connected to Wi-Fi
+    Serial.println("Connected! IP Address: " + WiFi.localIP().toString());
+    pinMode(LED_BUILTIN, OUTPUT);
+    WIFI_CONNECT_FLAG = true;
+
+    if (SPIFFS.begin(true))
+    {
+
+        Serial.println("SPIFFS mounted successfully");
+        listFiles(); // List all files in SPIFFS to verify
+    }
+    else
+    {
+        Serial.println("Failed to mount SPIFFS");
+        return;
+    }
+
+    webSocket.begin();
+    webSocket.onEvent([](uint8_t num, WStype_t type, uint8_t *payload, size_t length)
+                      {
         switch (type) {
             case WStype_CONNECTED: {
                 IPAddress ip = webSocket.remoteIP(num);
@@ -74,9 +102,8 @@ void setup()
                 break;
         } });
 
-  // Start HTTP server
-  server.on("/", HTTP_GET, []()
-            {
+    server.on("/", HTTP_GET, []()
+              {
         File file = SPIFFS.open("/index.html", "r");
         if (!file) {
             Serial.println("Error: index.html not found");
@@ -86,8 +113,8 @@ void setup()
         server.streamFile(file, "text/html");
         file.close(); });
 
-  server.on("/style.css", HTTP_GET, []()
-            {
+    server.on("/style.css", HTTP_GET, []()
+              {
     File file = SPIFFS.open("/style.css", "r");
     if (!file) {
         Serial.println("Error: style.css not found");
@@ -97,8 +124,8 @@ void setup()
     server.streamFile(file, "text/css");
     file.close(); });
 
-  server.on("/script.js", HTTP_GET, []()
-            {
+    server.on("/script.js", HTTP_GET, []()
+              {
     File file = SPIFFS.open("/script.js", "r");
     if (!file) {
         Serial.println("Error: script.js not found");
@@ -108,8 +135,8 @@ void setup()
     server.streamFile(file, "application/javascript");
     file.close(); });
 
-  server.on("/logo.jpg", HTTP_GET, []()
-            {
+    server.on("/logo.jpg", HTTP_GET, []()
+              {
     File file = SPIFFS.open("/logo.jpg", "r");
     if (!file) {
         Serial.println("Error: logo.jpg not found");
@@ -119,24 +146,31 @@ void setup()
     server.streamFile(file, "image/jpeg");
     file.close(); });
 
-  server.begin();
-  Serial.println("HTTP server started");
-  Serial.println("ESP32 is hosting at: http://" + WiFi.localIP().toString());
+    server.begin();
+    Serial.println("HTTP server started");
+    Serial.println("ESP32 is hosting at: http://" + WiFi.localIP().toString());
 }
 
 void loop()
 {
 
-  webSocket.loop();
-  server.handleClient();
+    if (WIFI_CONNECT_FLAG == true)
+    {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(500);
+    }
 
-  int rawADC = analogRead(VOLT_SENSOR_PIN);
-  float adcVoltage = rawADC * (V_REF / MAX_ADC);
+    webSocket.loop();
+    server.handleClient();
 
-  String jsonResponse = "{\"voltage\": " + String(adcVoltage, 3) + "}";
-  Serial.println("Broadcasting: " + jsonResponse);
-  webSocket.broadcastTXT(jsonResponse);
+    int16_t rawData = readADC();
+    float voltage = rawData * (2.048 / 32768.0); // Convert to voltage
 
-  delay(10);
+    String jsonResponse = "{\"voltage\": " + String(voltage, 3) + "}";
+    Serial.println("Broadcasting: " + jsonResponse);
+    webSocket.broadcastTXT(jsonResponse);
 
+    delay(1000);
 }
