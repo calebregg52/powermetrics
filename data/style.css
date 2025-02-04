@@ -1,40 +1,111 @@
+/* ============================= */
+/* Global Styles & Dark Mode     */
+/* ============================= */
+
+/* Global Styles */
 body {
-    background-color: #e9ecef; /* Light gray background */
+    background-color: #e9ecef; /* Light gray background (provided) */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    transition: background-color 0.3s, color 0.3s;
 }
+
+/* Dark Mode Global Styles */
+body.dark-mode {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+/* ============================= */
+/* Typography & Meter Values     */
+/* ============================= */
+
 .meter-value {
     font-size: 2rem;
     font-weight: bold;
-    color: #007bff;
+    color: #007bff; /* Provided color for light mode */
 }
+
+/* In dark mode, gauge text color is handled by the gauge container rule below */
+body.dark-mode .gauge-item {
+    color: #e0e0e0;
+}
+
+/* ============================= */
+/* Navigation Bar                */
+/* ============================= */
+
 .navbar {
-    background-color: #343a40;
+    background-color: #2c2c2c;
     color: white;
-    border-radius: 15px;
-    padding: 15px;
+    padding:15px;
     display: flex;
     justify-content: space-around;
     align-items: center;
 }
-.navbar-brand {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.navbar-brand img {
-    height: 50px;
-    border-radius: 50%;
-}
+
 .navbar-title {
     font-size: 1.5rem;
     font-weight: bold;
     color: white;
 }
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.navbar-brand img {
+    height: 50px;
+    border-radius: 50%;
+}
+
+/* ============================= */
+/* Card & Gauge Styling          */
+/* ============================= */
+
 .custom-card {
-    background-color: #f8f9fa; /* Light gray */
+    background-color: #f8f9fa; /* Light gray (provided) */
     border: 1px solid #dee2e6;
     border-radius: 10px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s, box-shadow 0.3s;
 }
+
+body.dark-mode .custom-card {
+    background-color: #1e1e1e;
+    box-shadow: 0 0.125rem 0.25rem rgba(255, 255, 255, 0.1);
+}
+
+.card-title {
+    font-weight: bold;
+}
+
+body.dark-mode .card-title {
+    color: #e0e0e0;
+}
+
+/* Gauge (Meter) Styling */
+.gauge-item {
+    background: #fff;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: transform 0.2s, background-color 0.3s;
+}
+
+.gauge-item:hover {
+    transform: translateY(-3px);
+}
+
+body.dark-mode .gauge-item {
+    background: #2c2c2c;
+}
+
+/* ============================= */
+/* Chart Container & Toggles     */
+/* ============================= */
 
 .chart-container {
     display: flex;
@@ -43,3 +114,21 @@ body {
     height: 100%; /* Ensures it takes the full height of the card */
     padding: 10px; /* Optional padding */
 }
+
+.toggle-container {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.toggle-container .form-check {
+    display: inline-block;
+    margin-right: 15px;
+}
+
+/* ============================= */
+/* Additional Notes              */
+/* ============================= */
+/*
+  Dark mode overrides for Chart.js (like tick and legend colors, and forcing graph lines white)
+  are handled dynamically via JavaScript. In light mode, your original colors and styles apply.
+*/
