@@ -17,160 +17,129 @@ WebServer server(80);
 
 #define SDA_PIN 21
 #define SCL_PIN 22
-#define I2C_ADDRESS 0x68 // MCP3426 I2C address
+#define ADC1_ADDRESS 0x68  // Voltage ADC (channels 1,3,4)
+#define ADC2_ADDRESS 0x6A  // Current ADC (channels 1,2)
 
-int16_t readADC()
-{
-    Wire.requestFrom(I2C_ADDRESS, 2);
-    if (Wire.available() == 2)
-    {
-        uint8_t highByte = Wire.read();
-        uint8_t lowByte = Wire.read();
-        return (int16_t)((highByte << 8) | lowByte);
+struct InputChannel {
+    uint8_t config;
+    uint8_t address;  // Added I2C address for each channel
+    String name;
+};
+
+InputChannel inputs[5] = {
+    {0b10001000, ADC1_ADDRESS, "voltage_1"},  // CH1 on ADC1
+    {0b11001000, ADC1_ADDRESS, "voltage_3"},  // CH3 on ADC1
+    {0b11011000, ADC1_ADDRESS, "voltage_4"},  // CH4 on ADC1
+    {0b10001000, ADC2_ADDRESS, "current_1"},  // CH1 on ADC2
+    {0b10101000, ADC2_ADDRESS, "current_2"}   // CH2 on ADC2
+};
+
+int16_t readADC(uint8_t config, uint8_t address) {
+    Wire.beginTransmission(address);
+    Wire.write(config);
+    Wire.endTransmission();
+    delay(100);
+
+    Wire.requestFrom(address, 2);
+    if (Wire.available() == 2) {
+        return (int16_t)((Wire.read() << 8) | Wire.read());
     }
-    Serial.println("Error: No data received!");
+    Serial.println("Error: No data received from address 0x" + String(address, HEX));
     return 0;
 }
 
-void listFiles()
-{
+void listFiles() {
     File root = SPIFFS.open("/");
     File file = root.openNextFile();
-    while (file)
-    {
-        Serial.print("File: ");
-        Serial.print(file.name());
-        Serial.print(" Size: ");
-        Serial.println(file.size());
+    while (file) {
+        Serial.printf("File: %s Size: %u\n", file.name(), file.size());
         file = root.openNextFile();
     }
 }
 
-void setup()
-{
-    Serial.begin(115200);    // begin serial output
-    WiFiManager wifiManager; // wifimanager handler
+void serveFile(const char* path, const char* contentType) {
+    File file = SPIFFS.open(path, "r");
+    if (!file) {
+        Serial.printf("Error: %s not found\n", path);
+        server.send(404, "text/plain", "File not found");
+        return;
+    }
+    server.streamFile(file, contentType);
+    file.close();
+}
+
+void setup() {
+    Serial.begin(115200);    
+    WiFiManager wifiManager; 
     Serial.println("Booting ESP32...");
 
-    Wire.begin(SDA_PIN, SCL_PIN); // Initialize I2C
+    Wire.begin(SDA_PIN, SCL_PIN);
+    Serial.println("Initializing MCP3426 ADCs...");
 
-    Serial.println("Initializing MCP3426 ADC...");
-
-    // Set Configuration Register for CH1, 16-bit mode, Continuous Conversion, PGA = 1
-    Wire.beginTransmission(I2C_ADDRESS);
-    Wire.write(0b10011000); // 16-bit, Continuous, Gain=1, CH1
-    Wire.endTransmission();
-
-    // Start the captive portal
-    if (!wifiManager.autoConnect("ESP32-Setup"))
-    {
+    if (!wifiManager.autoConnect("ESP32-Setup")) {
         Serial.println("Failed to connect. Rebooting...");
         ESP.restart();
     }
 
-    // Connected to Wi-Fi
     Serial.println("Connected! IP Address: " + WiFi.localIP().toString());
     pinMode(LED_BUILTIN, OUTPUT);
     WIFI_CONNECT_FLAG = true;
 
-    if (SPIFFS.begin(true))
-    {
-
-        Serial.println("SPIFFS mounted successfully");
-        listFiles(); // List all files in SPIFFS to verify
-    }
-    else
-    {
+    if (!SPIFFS.begin(true)) {
         Serial.println("Failed to mount SPIFFS");
         return;
     }
+    Serial.println("SPIFFS mounted successfully");
+    listFiles();
 
     webSocket.begin();
-    webSocket.onEvent([](uint8_t num, WStype_t type, uint8_t *payload, size_t length)
-                      {
+    webSocket.onEvent([](uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
         switch (type) {
-            case WStype_CONNECTED: {
-                IPAddress ip = webSocket.remoteIP(num);
-                Serial.printf("WebSocket[%u] connected from %s\n", num, ip.toString().c_str());
+            case WStype_CONNECTED:
+                Serial.printf("WebSocket[%u] connected from %s\n", num, webSocket.remoteIP(num).toString().c_str());
                 break;
-            }
             case WStype_DISCONNECTED:
                 Serial.printf("WebSocket[%u] disconnected\n", num);
                 break;
             case WStype_TEXT:
                 Serial.printf("WebSocket[%u] received text: %s\n", num, payload);
                 break;
-        } });
-
-    server.on("/", HTTP_GET, []()
-              {
-        File file = SPIFFS.open("/index.html", "r");
-        if (!file) {
-            Serial.println("Error: index.html not found");
-            server.send(404, "text/plain", "File not found");
-            return;
         }
-        server.streamFile(file, "text/html");
-        file.close(); });
+    });
 
-    server.on("/style.css", HTTP_GET, []()
-              {
-    File file = SPIFFS.open("/style.css", "r");
-    if (!file) {
-        Serial.println("Error: style.css not found");
-        server.send(404, "text/plain", "File not found");
-        return;
-    }
-    server.streamFile(file, "text/css");
-    file.close(); });
-
-    server.on("/script.js", HTTP_GET, []()
-              {
-    File file = SPIFFS.open("/script.js", "r");
-    if (!file) {
-        Serial.println("Error: script.js not found");
-        server.send(404, "text/plain", "File not found");
-        return;
-    }
-    server.streamFile(file, "application/javascript");
-    file.close(); });
-
-    server.on("/logo.jpg", HTTP_GET, []()
-              {
-    File file = SPIFFS.open("/logo.jpg", "r");
-    if (!file) {
-        Serial.println("Error: logo.jpg not found");
-        server.send(404, "text/plain", "File not found");
-        return;
-    }
-    server.streamFile(file, "image/jpeg");
-    file.close(); });
-
+    server.on("/", HTTP_GET, []() { serveFile("/index.html", "text/html"); });
+    server.on("/style.css", HTTP_GET, []() { serveFile("/style.css", "text/css"); });
+    server.on("/script.js", HTTP_GET, []() { serveFile("/script.js", "application/javascript"); });
+    server.on("/logo.jpg", HTTP_GET, []() { serveFile("/logo.jpg", "image/jpeg"); });
+    
     server.begin();
     Serial.println("HTTP server started");
     Serial.println("ESP32 is hosting at: http://" + WiFi.localIP().toString());
 }
 
-void loop()
-{
-
-    if (WIFI_CONNECT_FLAG == true)
-    {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(500);
-        digitalWrite(LED_BUILTIN, LOW);
+void loop() {
+    if (WIFI_CONNECT_FLAG) {
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
         delay(500);
     }
 
     webSocket.loop();
     server.handleClient();
 
-    int16_t rawData = readADC();
-    float voltage = rawData * (2.048 / 32768.0); // Convert to voltage
+    if (webSocket.connectedClients() > 0) {
+        String jsonResponse = "{";
+        for (int i = 0; i < 5; i++) {
+            int16_t rawData = readADC(inputs[i].config, inputs[i].address);
+            float voltage = rawData * (2.048 / 32768.0);
+            jsonResponse += "\"" + inputs[i].name + "\": " + String(voltage, 3);
+            if (i < 4) jsonResponse += ", ";
+        }
+        jsonResponse += "}";
 
-    String jsonResponse = "{\"voltage\": " + String(voltage, 3) + "}";
-    Serial.println("Broadcasting: " + jsonResponse);
-    webSocket.broadcastTXT(jsonResponse);
+        Serial.println("Broadcasting: " + jsonResponse);
+        webSocket.broadcastTXT(jsonResponse);
+    }
 
     delay(1000);
 }
+
