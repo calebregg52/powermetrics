@@ -7,19 +7,16 @@ document.addEventListener('DOMContentLoaded', () => {
   let t = 0;
   let dt = 1;
 
-  // Chart and state management
   const charts = {
     voltage: { chart: null, timescale: dt, zoom: 1, isPaused: false, triggerChannel: 0, triggerLevel: 0, triggered: false },
     current: { chart: null, timescale: dt, zoom: 1, isPaused: false, triggerChannel: 0, triggerLevel: 0, triggered: false }
   };
 
-  // Statistics
   const stats = {
     voltage: Array(voltageCount).fill().map(() => ({ min: Infinity, max: -Infinity, sum: 0, count: 0 })),
     current: Array(currentCount).fill().map(() => ({ min: Infinity, max: -Infinity, sum: 0, count: 0 }))
   };
 
-  // WebSocket connection
   const socket = new WebSocket(`ws://${window.location.hostname}:81/`);
   const statusIndicator = document.getElementById('websocket-status');
 
@@ -37,46 +34,90 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.onerror = (error) => console.log("WebSocket error:", error);
 
-  // Dark Mode Toggle
   document.getElementById('darkModeToggle').addEventListener('change', () => {
     document.body.classList.toggle('dark-mode');
     updateChartColors();
   });
 
-  // Voltage Chart
   charts.voltage.chart = new Chart(document.getElementById('voltageGraph').getContext('2d'), {
     type: 'line',
-    data: { labels: Array(maxDataPoints).fill(''), datasets: createDatasets(voltageCount, 0, 'Voltage') },
+    data: {
+      labels: Array(maxDataPoints).fill(''),
+      datasets: [
+        { label: 'Voltage 1', data: Array(maxDataPoints).fill(0), borderColor: colors[0], borderWidth: 2, fill: false, yAxisID: 'yLeft' },
+        { label: 'Voltage 3', data: Array(maxDataPoints).fill(0), borderColor: colors[1], borderWidth: 2, fill: false, yAxisID: 'yLeft' },
+        { label: 'Voltage 4', data: Array(maxDataPoints).fill(0), borderColor: colors[2], borderWidth: 2, fill: false, yAxisID: 'yLeft' }
+      ]
+    },
     options: getChartOptions()
   });
 
-  // Current Chart
   charts.current.chart = new Chart(document.getElementById('currentGraph').getContext('2d'), {
     type: 'line',
-    data: { labels: Array(maxDataPoints).fill(''), datasets: createDatasets(currentCount, voltageCount, 'Current') },
+    data: { labels: Array(maxDataPoints).fill(''), datasets: createDatasets(currentCount, 0, 'Current') },
     options: getChartOptions()
   });
 
-  // WebSocket Data Handling
+  // Fetch and display channel toggles in the modal
+  fetch('/get-channels')
+    .then(response => response.json())
+    .then(channels => {
+      const voltageToggles = document.getElementById('voltage-channel-toggles');
+      const currentToggles = document.getElementById('current-channel-toggles');
+
+      channels.forEach((channel, index) => {
+        const container = channel.name.startsWith('voltage') ? voltageToggles : currentToggles;
+        const div = document.createElement('div');
+        div.className = 'form-check form-switch d-inline-block me-3';
+        const checkbox = document.createElement('input');
+        checkbox.className = 'form-check-input';
+        checkbox.type = 'checkbox';
+        checkbox.id = `channel-toggle-${channel.name}`;
+        checkbox.checked = channel.enabled;
+        checkbox.addEventListener('change', () => {
+          fetch('/set-channel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `name=${channel.name}&enabled=${checkbox.checked}`
+          }).then(response => {
+            if (response.ok) console.log(`Channel ${channel.name} updated`);
+          });
+        });
+        const label = document.createElement('label');
+        label.className = 'form-check-label';
+        label.htmlFor = checkbox.id;
+        label.textContent = channel.name.replace('_', ' ').toUpperCase();
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        container.appendChild(div);
+      });
+    });
+
+  // Create only the chart visibility toggles (colored ones)
+  createToggles('voltage-toggles', voltageCount, charts.voltage.chart);
+  createToggles('current-toggles', currentCount, charts.current.chart);
+
   socket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      const voltageValues = [data.voltage_1 || 0, data.voltage_2 || 0, data.voltage_3 || 0];
+      const voltageValues = [data.voltage_1 || 0, data.voltage_3 || 0, data.voltage_4 || 0];
       const currentValues = [data.current_1 || 0, data.current_2 || 0];
 
-      // Threshold Alerts
+      // Threshold Alerts and Stats for Voltage (fixed mapping)
       voltageValues.forEach((v, i) => {
-        const threshold = parseFloat(document.getElementById(`volt-threshold-${i + 1}`).value) || Infinity;
-        document.getElementById(`volt-alert-${i + 1}`).textContent = v > threshold ? "Over Voltage!" : "";
-        updateStats(stats.voltage[i], v, `volt-stats-${i + 1}`);
+        const idNum = i === 0 ? 1 : i === 1 ? 3 : 4;  // Map to 1, 3, 4
+        const threshold = parseFloat(document.getElementById(`volt-threshold-${idNum}`).value) || Infinity;
+        document.getElementById(`volt-alert-${idNum}`).textContent = v > threshold ? "Over Voltage!" : "";
+        updateStats(stats.voltage[i], v, `volt-stats-${idNum}`);
       });
+
+      // Threshold Alerts and Stats for Current
       currentValues.forEach((c, i) => {
         const threshold = parseFloat(document.getElementById(`curr-threshold-${i + 1}`).value) || Infinity;
         document.getElementById(`curr-alert-${i + 1}`).textContent = c > threshold ? "Over Current!" : "";
         updateStats(stats.current[i], c, `curr-stats-${i + 1}`);
       });
 
-      // Triggering
       if (!charts.voltage.isPaused) {
         const vTrigger = voltageValues[charts.voltage.triggerChannel];
         if (!charts.voltage.triggered && vTrigger > charts.voltage.triggerLevel) charts.voltage.triggered = true;
@@ -94,7 +135,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Helper Functions
   function createDatasets(count, offset, prefix) {
     return Array.from({ length: count }, (_, i) => ({
       label: `${prefix} ${i + 1}`,
@@ -112,7 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
       chart.data.datasets.forEach((dataset, i) => {
         dataset.data.shift();
         dataset.data.push(values[i]);
-        document.getElementById(`${idPrefix}${i + 1}`).textContent = `${values[i].toFixed(3)} ${idPrefix.startsWith('voltage') ? 'V' : 'A'}`;
+        const idNum = idPrefix.startsWith('voltage') ? (i === 0 ? 1 : i === 1 ? 3 : 4) : i + 1;
+        document.getElementById(`${idPrefix}${idNum}`).textContent = `${values[i].toFixed(3)} ${idPrefix.startsWith('voltage') ? 'V' : 'A'}`;
       });
       chart.data.labels.shift();
       chart.data.labels.push(`${(t * timescale).toFixed(1)} s`);
@@ -175,7 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Control Functions
   window.togglePause = (type) => {
     charts[type].isPaused = !charts[type].isPaused;
     document.getElementById(`${type}-pause-btn`).textContent = charts[type].isPaused ? 'Resume' : 'Pause';
@@ -199,19 +239,60 @@ document.addEventListener('DOMContentLoaded', () => {
     chart.update();
   };
 
-  // Trigger Setup
+  window.resetChart = (type) => {
+    const chartObj = charts[type];
+    chartObj.timescale = 1;
+    chartObj.zoom = 1;
+    const chart = chartObj.chart;
+    chart.data.labels = chart.data.labels.map((_, i) => `${(i * chartObj.timescale).toFixed(1)} s`);
+    chart.options.scales.yLeft.min = -2;
+    chart.options.scales.yLeft.max = 2;
+    chart.update();
+  };
+
+  window.exportChartCSV = (type) => {
+    const chart = charts[type].chart;
+    const labels = chart.data.labels;
+    const datasets = chart.data.datasets;
+
+    let csvContent = "Time," + datasets.map(ds => ds.label).join(",") + "\n";
+    for (let i = 0; i < labels.length; i++) {
+      const row = [labels[i]];
+      datasets.forEach(ds => row.push(ds.data[i]));
+      csvContent += row.join(",") + "\n";
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${type}_chart_data.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  window.exportChartPNG = (type) => {
+    const chart = charts[type].chart;
+    const link = document.createElement("a");
+    link.setAttribute("href", chart.toBase64Image());
+    link.setAttribute("download", `${type}_chart.png`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   ['voltage', 'current'].forEach(type => {
     document.getElementById(`${type}-trigger-channel`).addEventListener('change', (e) => {
       charts[type].triggerChannel = parseInt(e.target.value);
-      charts[type].triggered = false; // Reset trigger
+      charts[type].triggered = false;
     });
     document.getElementById(`${type}-trigger-level`).addEventListener('input', (e) => {
       charts[type].triggerLevel = parseFloat(e.target.value) || 0;
-      charts[type].triggered = false; // Reset trigger
+      charts[type].triggered = false;
     });
   });
 
-  // Configuration Saving
   function saveSettings() {
     const settings = {
       timescale: { voltage: charts.voltage.timescale, current: charts.current.timescale },
@@ -232,14 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('beforeunload', saveSettings);
   loadSettings();
-
-  // Initialize Toggles
-  createToggles('voltage-toggles', voltageCount, charts.voltage.chart);
-  createToggles('current-toggles', currentCount, charts.current.chart);
 });
-
-  
-  
-  
 
   
