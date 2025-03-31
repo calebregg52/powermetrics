@@ -8,7 +8,7 @@
 #include <WebSocketsServer.h>
 #include <WiFiManager.h>
 #include <esp_task_wdt.h>
-// #include <esp_wpa2.h>  // Uncomment if using configureEnterpriseWiFi
+#include <esp_wpa2.h>
 
 // Forward declaration
 String getTime();
@@ -23,7 +23,8 @@ const uint8_t ADC2_ADDRESS = 0x6A;  // Current ADC (channels 1, 2)
 const uint8_t SDA_PIN = 21;
 const uint8_t SCL_PIN = 22;
 const uint32_t WDT_TIMEOUT_S = 10;
-const char* LOG_FILE = "/adc_log.csv";  // CSV log file path
+const char* LOG_FILE = "/adc_log.csv";
+const char* WIFI_CONFIG_FILE = "/wifi_config.json";
 
 // ADC Channel Configuration
 struct AdcChannel {
@@ -31,21 +32,95 @@ struct AdcChannel {
     uint8_t address;
     const char* name;
     int16_t value;
-    bool enabled;  // New field to track if channel is enabled
+    bool enabled;
 };
 
 AdcChannel adcChannels[] = {
-    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true}, // CH1
-    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true}, // CH3
-    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true}, // CH4
-    {0b10001000, ADC2_ADDRESS, "current_1", 0, true}, // CH1
-    {0b10101000, ADC2_ADDRESS, "current_2", 0, true}  // CH2
+    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true},
+    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true},
+    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true},
+    {0b10001000, ADC2_ADDRESS, "current_1", 0, true},
+    {0b10101000, ADC2_ADDRESS, "current_2", 0, true}
 };
 
 // Global Objects
 WebSocketsServer webSocket(81);
 WebServer server(80);
 bool wifiConnected = false;
+
+// Structure to hold WiFi settings
+struct WifiConfig {
+    bool useEnterprise;
+    String enterpriseSsid;
+    String enterpriseUsername;
+    String enterprisePassword;
+};
+
+// Read WiFi settings from SPIFFS
+WifiConfig loadWifiConfig() {
+    WifiConfig config = {false, "", "", ""};
+    File file = SPIFFS.open(WIFI_CONFIG_FILE, "r");
+    if (!file) {
+        Serial.println("Failed to open WiFi config file for reading");
+        return config;
+    }
+
+    String content = file.readString();
+    file.close();
+
+    int useEnterpriseIdx = content.indexOf("\"useEnterprise\":");
+    int ssidIdx = content.indexOf("\"enterpriseSsid\":");
+    int usernameIdx = content.indexOf("\"enterpriseUsername\":");
+    int passwordIdx = content.indexOf("\"enterprisePassword\":");
+
+    if (useEnterpriseIdx != -1) {
+        int valueStart = content.indexOf(":", useEnterpriseIdx) + 1;
+        int valueEnd = content.indexOf(",", valueStart);
+        if (valueEnd == -1) valueEnd = content.indexOf("}", valueStart);
+        String value = content.substring(valueStart, valueEnd);
+        config.useEnterprise = (value.indexOf("true") != -1);
+    }
+
+    if (ssidIdx != -1) {
+        int valueStart = content.indexOf("\"", ssidIdx + 15) + 1;
+        int valueEnd = content.indexOf("\"", valueStart);
+        config.enterpriseSsid = content.substring(valueStart, valueEnd);
+    }
+
+    if (usernameIdx != -1) {
+        int valueStart = content.indexOf("\"", usernameIdx + 19) + 1;
+        int valueEnd = content.indexOf("\"", valueStart);
+        config.enterpriseUsername = content.substring(valueStart, valueEnd);
+    }
+
+    if (passwordIdx != -1) {
+        int valueStart = content.indexOf("\"", passwordIdx + 19) + 1;
+        int valueEnd = content.indexOf("\"", valueStart);
+        config.enterprisePassword = content.substring(valueStart, valueEnd);
+    }
+
+    return config;
+}
+
+// Save WiFi settings to SPIFFS
+void saveWifiConfig(const WifiConfig& config) {
+    File file = SPIFFS.open(WIFI_CONFIG_FILE, "w");
+    if (!file) {
+        Serial.println("Failed to open WiFi config file for writing");
+        return;
+    }
+
+    String json = "{";
+    json += "\"useEnterprise\":" + String(config.useEnterprise ? "true" : "false") + ",";
+    json += "\"enterpriseSsid\":\"" + config.enterpriseSsid + "\",";
+    json += "\"enterpriseUsername\":\"" + config.enterpriseUsername + "\",";
+    json += "\"enterprisePassword\":\"" + config.enterprisePassword + "\"";
+    json += "}";
+
+    file.print(json);
+    file.close();
+    Serial.println("WiFi config saved");
+}
 
 // Read a single ADC channel
 int16_t readSingleChannel(const AdcChannel& channel) {
@@ -61,43 +136,44 @@ int16_t readSingleChannel(const AdcChannel& channel) {
     return 0;
 }
 
-// Update all ADC values (only for enabled channels)
+// Update all ADC values
 void updateAdcValues() {
     for (auto& channel : adcChannels) {
         if (channel.enabled) {
             channel.value = readSingleChannel(channel);
         } else {
-            channel.value = 0;  // Set to 0 if disabled
+            channel.value = 0;
         }
     }
 }
 
 // Build JSON response and return CSV line
 String buildJsonResponse(String& csvLine) {
+    const float VOLTAGE_MULTIPLIER = 11.338;  // Define the multiplier constant
+    const float ADC_TO_VOLT = 2.048 / 32768.0;  // Original ADC conversion factor
+    
     char buffer[256];
     snprintf(buffer, sizeof(buffer),
              "{\"time\":\"%s\",\"voltage_1\":%.3f,\"voltage_3\":%.3f,\"voltage_4\":%.3f,\"current_1\":%.3f,\"current_2\":%.3f}",
              getTime().c_str(),
-             adcChannels[0].enabled ? adcChannels[0].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[1].enabled ? adcChannels[1].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[2].enabled ? adcChannels[2].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[3].enabled ? adcChannels[3].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[4].enabled ? adcChannels[4].value * (2.048 / 32768.0) : 0.0);
+             adcChannels[0].enabled ? adcChannels[0].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[1].enabled ? adcChannels[1].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[2].enabled ? adcChannels[2].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[3].enabled ? adcChannels[3].value * ADC_TO_VOLT : 0.0,
+             adcChannels[4].enabled ? adcChannels[4].value * ADC_TO_VOLT : 0.0);
     
-    // Build CSV line: "time,voltage_1,voltage_3,voltage_4,current_1,current_2"
     char csvBuffer[128];
     snprintf(csvBuffer, sizeof(csvBuffer),
              "%s,%.3f,%.3f,%.3f,%.3f,%.3f",
              getTime().c_str(),
-             adcChannels[0].enabled ? adcChannels[0].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[1].enabled ? adcChannels[1].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[2].enabled ? adcChannels[2].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[3].enabled ? adcChannels[3].value * (2.048 / 32768.0) : 0.0,
-             adcChannels[4].enabled ? adcChannels[4].value * (2.048 / 32768.0) : 0.0);
+             adcChannels[0].enabled ? adcChannels[0].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[1].enabled ? adcChannels[1].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[2].enabled ? adcChannels[2].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
+             adcChannels[3].enabled ? adcChannels[3].value * ADC_TO_VOLT : 0.0,
+             adcChannels[4].enabled ? adcChannels[4].value * ADC_TO_VOLT : 0.0);
     csvLine = String(csvBuffer);
     return String(buffer);
 }
-
 // Log data to CSV file
 void logToCsv(const String& csvLine) {
     File file = SPIFFS.open(LOG_FILE, FILE_APPEND);
@@ -105,7 +181,7 @@ void logToCsv(const String& csvLine) {
         Serial.println("Failed to open log file for appending");
         return;
     }
-    if (file.size() == 0) {  // Write header if file is new
+    if (file.size() == 0) {
         file.println("time,voltage_1,voltage_3,voltage_4,current_1,current_2");
     }
     file.println(csvLine);
@@ -172,26 +248,20 @@ void configureWiFi(WiFiManager& wifiManager) {
     Serial.printf("Connected! IP Address: %s\n", WiFi.localIP().toString().c_str());
 }
 
-/*
 // Function to connect to an enterprise WiFi network (WPA2-Enterprise)
 void configureEnterpriseWiFi(const char* ssid, const char* username, const char* password) {
-    // Ensure WiFi is disconnected before attempting a new connection
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
 
-    // Begin enterprise connection
     Serial.printf("Attempting to connect to Enterprise SSID: %s\n", ssid);
     
-    // Use esp_wifi_sta_wpa2_ent_set_identity() and related functions for enterprise auth
     esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)username, strlen(username));
     esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username));
     esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password));
     esp_wifi_sta_wpa2_ent_enable();
 
-    // Start the connection
     WiFi.begin(ssid);
 
-    // Wait for connection
     uint32_t startTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
         delay(500);
@@ -202,11 +272,10 @@ void configureEnterpriseWiFi(const char* ssid, const char* username, const char*
         wifiConnected = true;
         Serial.printf("\nConnected to Enterprise WiFi! IP Address: %s\n", WiFi.localIP().toString().c_str());
     } else {
-        Serial.println("\nFailed to connect to Enterprise WiFi. Rebooting...");
-        ESP.restart();
+        wifiConnected = false;
+        Serial.println("\nFailed to connect to Enterprise WiFi.");
     }
 }
-*/
 
 void setupWebServer() {
     server.on("/", HTTP_GET, []() { serveFile("/index.html", "text/html"); });
@@ -214,7 +283,6 @@ void setupWebServer() {
     server.on("/script.js", HTTP_GET, []() { serveFile("/script.js", "application/javascript"); });
     server.on("/logo.png", HTTP_GET, []() { serveFile("/logo.png", "image/png"); });
     
-    // Endpoint to download the log file
     server.on("/download-log", HTTP_GET, []() {
         if (SPIFFS.exists(LOG_FILE)) {
             File file = SPIFFS.open(LOG_FILE, "r");
@@ -225,7 +293,6 @@ void setupWebServer() {
         }
     });
 
-    // Endpoint to get current channel configuration
     server.on("/get-channels", HTTP_GET, []() {
         String json = "[";
         for (size_t i = 0; i < sizeof(adcChannels) / sizeof(adcChannels[0]); i++) {
@@ -236,7 +303,6 @@ void setupWebServer() {
         server.send(200, "application/json", json);
     });
 
-    // Endpoint to update channel configuration
     server.on("/set-channel", HTTP_POST, []() {
         if (server.hasArg("name") && server.hasArg("enabled")) {
             String name = server.arg("name");
@@ -249,6 +315,31 @@ void setupWebServer() {
                 }
             }
             server.send(200, "text/plain", "OK");
+        } else {
+            server.send(400, "text/plain", "Invalid request");
+        }
+    });
+
+    server.on("/get-wifi-config", HTTP_GET, []() {
+        WifiConfig config = loadWifiConfig();
+        String json = "{";
+        json += "\"useEnterprise\":" + String(config.useEnterprise ? "true" : "false") + ",";
+        json += "\"enterpriseSsid\":\"" + config.enterpriseSsid + "\",";
+        json += "\"enterpriseUsername\":\"" + config.enterpriseUsername + "\",";
+        json += "\"enterprisePassword\":\"" + config.enterprisePassword + "\"";
+        json += "}";
+        server.send(200, "application/json", json);
+    });
+
+    server.on("/set-wifi-config", HTTP_POST, []() {
+        if (server.hasArg("useEnterprise") && server.hasArg("enterpriseSsid") && server.hasArg("enterpriseUsername") && server.hasArg("enterprisePassword")) {
+            WifiConfig config;
+            config.useEnterprise = server.arg("useEnterprise") == "true";
+            config.enterpriseSsid = server.arg("enterpriseSsid");
+            config.enterpriseUsername = server.arg("enterpriseUsername");
+            config.enterprisePassword = server.arg("enterprisePassword");
+            saveWifiConfig(config);
+            server.send(200, "text/plain", "WiFi configuration updated. Please restart the device to apply changes.");
         } else {
             server.send(400, "text/plain", "Invalid request");
         }
@@ -282,17 +373,26 @@ void setup() {
     Wire.begin(SDA_PIN, SCL_PIN);
     Serial.println("Initializing MCP3426 ADCs...");
 
-    WiFiManager wifiManager;
-    configureWiFi(wifiManager);
-
-    pinMode(LED_PIN, OUTPUT);
-
     if (!SPIFFS.begin(true)) {
         Serial.println("Failed to mount SPIFFS");
         return;
     }
     Serial.println("SPIFFS mounted successfully");
-    deleteLogFile();  // Delete log file on startup
+
+    WifiConfig wifiConfig = loadWifiConfig();
+
+    if (wifiConfig.useEnterprise && wifiConfig.enterpriseSsid != "" && wifiConfig.enterpriseUsername != "" && wifiConfig.enterprisePassword != "") {
+        configureEnterpriseWiFi(wifiConfig.enterpriseSsid.c_str(), wifiConfig.enterpriseUsername.c_str(), wifiConfig.enterprisePassword.c_str());
+    }
+
+    if (!wifiConnected) {
+        WiFiManager wifiManager;
+        configureWiFi(wifiManager);
+    }
+
+    pinMode(LED_PIN, OUTPUT);
+
+    deleteLogFile();
     listFiles();
     displayStorageCapacity();
 
@@ -329,7 +429,7 @@ void loop() {
             String jsonResponse = buildJsonResponse(csvLine);
             Serial.printf("Broadcasting: %s\n", jsonResponse.c_str());
             webSocket.broadcastTXT(jsonResponse);
-            logToCsv(csvLine);  // Log to CSV
+            logToCsv(csvLine);
         }
         lastRead = now;
     }

@@ -93,25 +93,69 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-  // Create only the chart visibility toggles (colored ones)
-  createToggles('voltage-toggles', voltageCount, charts.voltage.chart);
-  createToggles('current-toggles', currentCount, charts.current.chart);
+  // WiFi Configuration Modal Logic
+  const wifiConfigModal = document.getElementById('wifiConfigModal');
+  const wifiTypeSelect = document.getElementById('wifiType');
+  const enterpriseFields = document.getElementById('enterpriseFields');
+  const wifiConfigForm = document.getElementById('wifiConfigForm');
 
+  wifiConfigModal.addEventListener('show.bs.modal', () => {
+    fetch('/get-wifi-config')
+      .then(response => response.json())
+      .then(config => {
+        wifiTypeSelect.value = config.useEnterprise ? 'enterprise' : 'home';
+        enterpriseFields.style.display = config.useEnterprise ? 'block' : 'none';
+        document.getElementById('enterpriseSsid').value = config.enterpriseSsid || '';
+        document.getElementById('enterpriseUsername').value = config.enterpriseUsername || '';
+        document.getElementById('enterprisePassword').value = config.enterprisePassword || '';
+      });
+  });
+
+  wifiTypeSelect.addEventListener('change', () => {
+    enterpriseFields.style.display = wifiTypeSelect.value === 'enterprise' ? 'block' : 'none';
+  });
+
+  wifiConfigForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(wifiConfigForm);
+    const useEnterprise = wifiTypeSelect.value === 'enterprise';
+    const data = {
+      useEnterprise: useEnterprise,
+      enterpriseSsid: formData.get('enterpriseSsid') || '',
+      enterpriseUsername: formData.get('enterpriseUsername') || '',
+      enterprisePassword: formData.get('enterprisePassword') || ''
+    };
+
+    fetch('/set-wifi-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `useEnterprise=${data.useEnterprise}&enterpriseSsid=${encodeURIComponent(data.enterpriseSsid)}&enterpriseUsername=${encodeURIComponent(data.enterpriseUsername)}&enterprisePassword=${encodeURIComponent(data.enterprisePassword)}`
+    })
+    .then(response => response.text())
+    .then(message => {
+      alert(message);
+      bootstrap.Modal.getInstance(wifiConfigModal).hide();
+    })
+    .catch(error => {
+      console.error('Error updating WiFi config:', error);
+      alert('Failed to update WiFi configuration.');
+    });
+  });
+
+  // Chart and WebSocket Logic
   socket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
       const voltageValues = [data.voltage_1 || 0, data.voltage_3 || 0, data.voltage_4 || 0];
       const currentValues = [data.current_1 || 0, data.current_2 || 0];
 
-      // Threshold Alerts and Stats for Voltage (fixed mapping)
       voltageValues.forEach((v, i) => {
-        const idNum = i === 0 ? 1 : i === 1 ? 3 : 4;  // Map to 1, 3, 4
+        const idNum = i === 0 ? 1 : i === 1 ? 3 : 4;
         const threshold = parseFloat(document.getElementById(`volt-threshold-${idNum}`).value) || Infinity;
         document.getElementById(`volt-alert-${idNum}`).textContent = v > threshold ? "Over Voltage!" : "";
         updateStats(stats.voltage[i], v, `volt-stats-${idNum}`);
       });
 
-      // Threshold Alerts and Stats for Current
       currentValues.forEach((c, i) => {
         const threshold = parseFloat(document.getElementById(`curr-threshold-${i + 1}`).value) || Infinity;
         document.getElementById(`curr-alert-${i + 1}`).textContent = c > threshold ? "Over Current!" : "";
@@ -234,8 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
     chartObj.zoom *= factor;
     chartObj.zoom = Math.max(0.1, Math.min(10, chartObj.zoom));
     const chart = chartObj.chart;
-    chart.options.scales.yLeft.min = -2 / chartObj.zoom;
-    chart.options.scales.yLeft.max = 2 / chartObj.zoom;
+    chart.options.scales.yLeft.min = -2 * chartObj.zoom;
+    chart.options.scales.yLeft.max = 2 * chartObj.zoom;
     chart.update();
   };
 
@@ -313,6 +357,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('beforeunload', saveSettings);
   loadSettings();
+
+  createToggles('voltage-toggles', voltageCount, charts.voltage.chart);
+  createToggles('current-toggles', currentCount, charts.current.chart);
 });
 
   
