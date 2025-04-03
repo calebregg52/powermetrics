@@ -180,6 +180,9 @@
               <h5 class="card-title text-center">Voltage Trends</h5>
               <div class="toggle-container text-center" id="voltage-toggles"></div>
               <div class="chart-container flex-grow-1"><canvas id="voltageGraph"></canvas></div>
+              <div class="zoom-level text-center mt-2">
+                <p>Zoom Level: <span id="voltage-zoom-level">1.0</span></p>
+              </div>
               <div class="control-buttons mt-3 text-center">
                 <button id="voltage-pause-btn" class="btn btn-sm btn-warning me-2" onclick="togglePause('voltage')">Pause</button>
                 <button class="btn btn-sm btn-primary me-2" onclick="changeTimescale('voltage', -1)">- Timescale</button>
@@ -210,6 +213,9 @@
               <h5 class="card-title text-center">Current Trends</h5>
               <div class="toggle-container text-center" id="current-toggles"></div>
               <div class="chart-container flex-grow-1"><canvas id="currentGraph"></canvas></div>
+              <div class="zoom-level text-center mt-2">
+                <p>Zoom Level: <span id="current-zoom-level">1.0</span></p>
+              </div>
               <div class="control-buttons mt-3 text-center">
                 <button id="current-pause-btn" class="btn btn-sm btn-warning me-2" onclick="togglePause('current')">Pause</button>
                 <button class="btn btn-sm btn-primary me-2" onclick="changeTimescale('current', -1)">- Timescale</button>
@@ -259,5 +265,5 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'92aac600e808ed32',t:'MTc0MzcwNjQ1NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

@@ -215,15 +215,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getChartOptions() {
     return {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { ticks: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' }, grid: { color: '#dee2e6' } },
-        yLeft: { type: 'linear', position: 'left', ticks: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' } }
-      },
-      plugins: { legend: { labels: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' } } }
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { ticks: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' }, grid: { color: '#dee2e6' } },
+            yLeft: {
+                type: 'linear',
+                position: 'left',
+                min: -25,  // Updated to accommodate new voltage range
+                max: 25,   // Updated to accommodate new voltage range
+                ticks: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' }
+            }
+        },
+        plugins: { legend: { labels: { color: () => document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#333' } } }
     };
-  }
+}
 
   function updateChartColors() {
     const isDark = document.body.classList.contains('dark-mode');
@@ -275,25 +281,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.zoomChart = (type, factor) => {
     const chartObj = charts[type];
-    chartObj.zoom *= factor;
+    const zoomStep = 0.1;
+    if (factor < 1) {
+        chartObj.zoom -= zoomStep;
+    } else {
+        chartObj.zoom += zoomStep;
+    }
     chartObj.zoom = Math.max(0.1, Math.min(10, chartObj.zoom));
     const chart = chartObj.chart;
-    chart.options.scales.yLeft.min = -2 * chartObj.zoom;
-    chart.options.scales.yLeft.max = 2 * chartObj.zoom;
+    const baseRange = type === 'voltage' ? 25 : 2;
+    chart.options.scales.yLeft.min = -baseRange * chartObj.zoom;
+    chart.options.scales.yLeft.max = baseRange * chartObj.zoom;
+    chartObj.triggered = false;
     chart.update();
+    document.getElementById(`${type}-zoom-level`).textContent = chartObj.zoom.toFixed(1);
   };
 
   window.resetChart = (type) => {
-    const chartObj = charts[type];
-    chartObj.timescale = 1;
-    chartObj.zoom = 1;
-    const chart = chartObj.chart;
-    chart.data.labels = chart.data.labels.map((_, i) => `${(i * chartObj.timescale).toFixed(1)} s`);
-    chart.options.scales.yLeft.min = -2;
-    chart.options.scales.yLeft.max = 2;
-    chart.update();
+      const chartObj = charts[type];
+      chartObj.timescale = 1;
+      chartObj.zoom = 1;
+      chartObj.triggered = false;
+      const chart = chartObj.chart;
+      chart.data.labels = chart.data.labels.map((_, i) => `${(i * chartObj.timescale).toFixed(1)} s`);
+      const baseRange = type === 'voltage' ? 25 : 2;
+      chart.options.scales.yLeft.min = -baseRange;
+      chart.options.scales.yLeft.max = baseRange;
+      chart.update();
+      document.getElementById(`${type}-zoom-level`).textContent = chartObj.zoom.toFixed(1);
   };
-
   window.exportChartCSV = (type) => {
     const chart = charts[type].chart;
     const labels = chart.data.labels;

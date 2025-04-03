@@ -441,6 +441,15 @@ body.dark-mode .trigger-select:focus, body.dark-mode .trigger-input:focus {
     box-shadow: 0 0 0 0.2rem rgba(64, 196, 255, 0.25);
 }
 
+.zoom-level p {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+body.dark-mode .zoom-level p {
+    color: #bbb;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 768px) {
     .gauge-item { padding: 0.75rem; }

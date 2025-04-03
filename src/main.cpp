@@ -33,16 +33,17 @@ struct AdcChannel {
     const char* name;
     int16_t value;
     bool enabled;
+    float multiplier;  // Slope from the linear equation
+    float offset;     // Intercept from the linear equation
 };
 
 AdcChannel adcChannels[] = {
-    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true},
-    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true},
-    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true},
-    {0b10001000, ADC2_ADDRESS, "current_1", 0, true},
-    {0b10101000, ADC2_ADDRESS, "current_2", 0, true}
+    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true, 11.76, -0.015},  // y = 11.76x - 0.015
+    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true, 11.74, -0.020},  // y = 11.74x - 0.020
+    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true, 11.73, -0.022},  // y = 11.73x - 0.022
+    {0b10001000, ADC2_ADDRESS, "current_1", 0, true, 1.0, 0.0},
+    {0b10101000, ADC2_ADDRESS, "current_2", 0, true, 1.0, 0.0}
 };
-
 // Global Objects
 WebSocketsServer webSocket(81);
 WebServer server(80);
@@ -149,29 +150,38 @@ void updateAdcValues() {
 
 // Build JSON response and return CSV line
 String buildJsonResponse(String& csvLine) {
-    const float VOLTAGE_MULTIPLIER = 11.338;  // Define the multiplier constant
-    const float ADC_TO_VOLT = 2.048 / 32768.0;  // Original ADC conversion factor
-    
-    char buffer[256];
+    const float ADC_TO_VOLT = 2.048 / 32768.0;
+
+    float adc_volt_1 = adcChannels[0].value * ADC_TO_VOLT;
+    float adc_volt_3 = adcChannels[1].value * ADC_TO_VOLT;
+    float adc_volt_4 = adcChannels[2].value * ADC_TO_VOLT;
+
+    float voltage_1 = adcChannels[0].enabled ? 
+        (adc_volt_1 <= 0.966 ? (adc_volt_1 * 11.03 - 0.01) : 
+         (adc_volt_1 <= 1.389 ? (adc_volt_1 * 11.75 - 0.95) : (adc_volt_1 * 12.05 - 1.65))) : 0.0;
+    float voltage_3 = adcChannels[1].enabled ? 
+        (adc_volt_3 <= 0.966 ? (adc_volt_3 * 11.03 - 0.01) : 
+         (adc_volt_3 <= 1.389 ? (adc_volt_3 * 11.75 - 0.95) : (adc_volt_3 * 12.05 - 1.65))) : 0.0;
+    float voltage_4 = adcChannels[2].enabled ? 
+        (adc_volt_4 <= 0.966 ? (adc_volt_4 * 11.03 - 0.01) : 
+         (adc_volt_4 <= 1.389 ? (adc_volt_4 * 11.75 - 0.95) : (adc_volt_4 * 12.05 - 1.65))) : 0.0;
+
+    float current_1 = adcChannels[3].enabled ? (adcChannels[3].value * ADC_TO_VOLT) : 0.0;
+    float current_2 = adcChannels[4].enabled ? (adcChannels[4].value * ADC_TO_VOLT) : 0.0;
+
+    char buffer[512];
     snprintf(buffer, sizeof(buffer),
-             "{\"time\":\"%s\",\"voltage_1\":%.3f,\"voltage_3\":%.3f,\"voltage_4\":%.3f,\"current_1\":%.3f,\"current_2\":%.3f}",
-             getTime().c_str(),
-             adcChannels[0].enabled ? adcChannels[0].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[1].enabled ? adcChannels[1].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[2].enabled ? adcChannels[2].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[3].enabled ? adcChannels[3].value * ADC_TO_VOLT : 0.0,
-             adcChannels[4].enabled ? adcChannels[4].value * ADC_TO_VOLT : 0.0);
-    
+             "{\"time\":\"%s\",\"voltage_1\":%.3f,\"voltage_3\":%.3f,\"voltage_4\":%.3f,\"current_1\":%.3f,\"current_2\":%.3f,"
+             "\"raw_adc_1\":%d,\"raw_adc_3\":%d,\"raw_adc_4\":%d}",
+             getTime().c_str(), voltage_1, voltage_3, voltage_4, current_1, current_2,
+             adcChannels[0].value, adcChannels[1].value, adcChannels[2].value);
+
     char csvBuffer[128];
     snprintf(csvBuffer, sizeof(csvBuffer),
              "%s,%.3f,%.3f,%.3f,%.3f,%.3f",
-             getTime().c_str(),
-             adcChannels[0].enabled ? adcChannels[0].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[1].enabled ? adcChannels[1].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[2].enabled ? adcChannels[2].value * ADC_TO_VOLT * VOLTAGE_MULTIPLIER : 0.0,
-             adcChannels[3].enabled ? adcChannels[3].value * ADC_TO_VOLT : 0.0,
-             adcChannels[4].enabled ? adcChannels[4].value * ADC_TO_VOLT : 0.0);
+             getTime().c_str(), voltage_1, voltage_3, voltage_4, current_1, current_2);
     csvLine = String(csvBuffer);
+
     return String(buffer);
 }
 // Log data to CSV file
