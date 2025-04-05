@@ -25,6 +25,7 @@ const uint8_t SCL_PIN = 22;
 const uint32_t WDT_TIMEOUT_S = 10;
 const char* LOG_FILE = "/adc_log.csv";
 const char* WIFI_CONFIG_FILE = "/wifi_config.json";
+const char* AP_NAME = "ESP32-Setup";
 
 // ADC Channel Configuration
 struct AdcChannel {
@@ -33,16 +34,16 @@ struct AdcChannel {
     const char* name;
     int16_t value;
     bool enabled;
-    float multiplier;  // Slope from the linear equation
-    float offset;     // Intercept from the linear equation
+    float multiplier;
+    float offset;
 };
 
 AdcChannel adcChannels[] = {
-    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true, 11.76, -0.015},  // y = 11.76x - 0.015
-    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true, 11.74, -0.020},  // y = 11.74x - 0.020
-    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true, 11.73, -0.022},  // y = 11.73x - 0.022
-    {0b10001000, ADC2_ADDRESS, "current_1", 0, true, 1.0, 0.0},
-    {0b10101000, ADC2_ADDRESS, "current_2", 0, true, 1.0, 0.0}
+    {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true, 10.9925, -0.0904},
+    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true, 10.9984 -0.1045},
+    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true, 10.9979,  -0.1046},
+    {0b10001000, ADC2_ADDRESS, "current_1", 0, true, 0.58584, 0.03865},
+    {0b10101000, ADC2_ADDRESS, "current_2", 0, true, -0.60161, 0.07435},
 };
 // Global Objects
 WebSocketsServer webSocket(81);
@@ -166,14 +167,21 @@ String buildJsonResponse(String& csvLine) {
         (adc_volt_4 <= 0.966 ? (adc_volt_4 * 11.03 - 0.01) : 
          (adc_volt_4 <= 1.389 ? (adc_volt_4 * 11.75 - 0.95) : (adc_volt_4 * 12.05 - 1.65))) : 0.0;
 
-    float current_1 = adcChannels[3].enabled ? (adcChannels[3].value * ADC_TO_VOLT) : 0.0;
-    float current_2 = adcChannels[4].enabled ? (adcChannels[4].value * ADC_TO_VOLT) : 0.0;
+    float raw_current_1 = adcChannels[3].value * ADC_TO_VOLT;
+    float raw_current_2 = adcChannels[4].value * ADC_TO_VOLT;
+
+    float current_1 = adcChannels[3].enabled ? 
+        (raw_current_1 * adcChannels[3].multiplier + adcChannels[3].offset) : 0.0;
+    float current_2 = adcChannels[4].enabled ? 
+        (raw_current_2 * adcChannels[4].multiplier + adcChannels[4].offset) : 0.0;
 
     char buffer[512];
     snprintf(buffer, sizeof(buffer),
-             "{\"time\":\"%s\",\"voltage_1\":%.3f,\"voltage_3\":%.3f,\"voltage_4\":%.3f,\"current_1\":%.3f,\"current_2\":%.3f,"
+             "{\"time\":\"%s\",\"voltage_1\":%.3f,\"voltage_3\":%.3f,\"voltage_4\":%.3f,"
+             "\"current_1\":%.3f,\"current_2\":%.3f,"
              "\"raw_adc_1\":%d,\"raw_adc_3\":%d,\"raw_adc_4\":%d}",
-             getTime().c_str(), voltage_1, voltage_3, voltage_4, current_1, current_2,
+             getTime().c_str(), voltage_1, voltage_3, voltage_4,
+             current_1, current_2,
              adcChannels[0].value, adcChannels[1].value, adcChannels[2].value);
 
     char csvBuffer[128];
@@ -184,6 +192,8 @@ String buildJsonResponse(String& csvLine) {
 
     return String(buffer);
 }
+
+
 // Log data to CSV file
 void logToCsv(const String& csvLine) {
     File file = SPIFFS.open(LOG_FILE, FILE_APPEND);
@@ -249,42 +259,74 @@ String getTime() {
     return String(buffer);
 }
 
-void configureWiFi(WiFiManager& wifiManager) {
-    if (!wifiManager.autoConnect("ESP32-Setup")) {
-        Serial.println("Failed to connect. Rebooting...");
-        ESP.restart();
-    }
-    wifiConnected = true;
-    Serial.printf("Connected! IP Address: %s\n", WiFi.localIP().toString().c_str());
-}
-
-// Function to connect to an enterprise WiFi network (WPA2-Enterprise)
-void configureEnterpriseWiFi(const char* ssid, const char* username, const char* password) {
+// Combined WiFi connection function
+void configureEnterpriseWiFi(const WifiConfig& config) {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
-
-    Serial.printf("Attempting to connect to Enterprise SSID: %s\n", ssid);
-    
-    esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)username, strlen(username));
-    esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username));
-    esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password));
+    Serial.printf("Attempting enterprise WiFi connection to: %s\n", config.enterpriseSsid.c_str());
+    esp_wifi_sta_wpa2_ent_set_identity((uint8_t*)config.enterpriseUsername.c_str(), config.enterpriseUsername.length());
+    esp_wifi_sta_wpa2_ent_set_username((uint8_t*)config.enterpriseUsername.c_str(), config.enterpriseUsername.length());
+    esp_wifi_sta_wpa2_ent_set_password((uint8_t*)config.enterprisePassword.c_str(), config.enterprisePassword.length());
     esp_wifi_sta_wpa2_ent_enable();
-
-    WiFi.begin(ssid);
-
+    WiFi.begin(config.enterpriseSsid.c_str());
     uint32_t startTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
         delay(500);
         Serial.print(".");
     }
+    wifiConnected = (WiFi.status() == WL_CONNECTED);
+    Serial.printf("\nEnterprise WiFi %s - IP: %s\n",
+                 wifiConnected ? "connected" : "failed",
+                 wifiConnected ? WiFi.localIP().toString().c_str() : "N/A");
+}
 
-    if (WiFi.status() == WL_CONNECTED) {
-        wifiConnected = true;
-        Serial.printf("\nConnected to Enterprise WiFi! IP Address: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        wifiConnected = false;
-        Serial.println("\nFailed to connect to Enterprise WiFi.");
+bool attemptWiFiConnection() {
+    WifiConfig config = loadWifiConfig();
+    
+    if (config.useEnterprise && !config.enterpriseSsid.isEmpty() && 
+        !config.enterpriseUsername.isEmpty() && !config.enterprisePassword.isEmpty()) {
+        configureEnterpriseWiFi(config);
+        if (wifiConnected) return true;
     }
+    
+    WiFiManager wifiManager;
+    wifiManager.setConfigPortalTimeout(180);
+    
+    WiFiManagerParameter custom_use_ent("useEnt", "Use Enterprise WiFi", 
+                                       config.useEnterprise ? "1" : "0", 2, "type='checkbox'");
+    WiFiManagerParameter custom_ssid("ssid", "Enterprise SSID", 
+                                    config.enterpriseSsid.c_str(), 32);
+    WiFiManagerParameter custom_user("user", "Enterprise Username", 
+                                    config.enterpriseUsername.c_str(), 64);
+    WiFiManagerParameter custom_pass("pass", "Enterprise Password", 
+                                    config.enterprisePassword.c_str(), 64, "type='password'");
+    
+    wifiManager.addParameter(&custom_use_ent);
+    wifiManager.addParameter(&custom_ssid);
+    wifiManager.addParameter(&custom_user);
+    wifiManager.addParameter(&custom_pass);
+    
+    wifiManager.setSaveConfigCallback([&]() {
+        WifiConfig newConfig;
+        newConfig.useEnterprise = String(custom_use_ent.getValue()).toInt() == 1;
+        newConfig.enterpriseSsid = custom_ssid.getValue();
+        newConfig.enterpriseUsername = custom_user.getValue();
+        newConfig.enterprisePassword = custom_pass.getValue();
+        saveWifiConfig(newConfig);
+        if (newConfig.useEnterprise) {
+            configureEnterpriseWiFi(newConfig);
+        }
+    });
+    
+    bool connected = wifiManager.autoConnect(AP_NAME);
+    wifiConnected = connected;
+    
+    if (connected) {
+        Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println("Failed to connect");
+    }
+    return connected;
 }
 
 void setupWebServer() {
@@ -389,15 +431,10 @@ void setup() {
     }
     Serial.println("SPIFFS mounted successfully");
 
-    WifiConfig wifiConfig = loadWifiConfig();
-
-    if (wifiConfig.useEnterprise && wifiConfig.enterpriseSsid != "" && wifiConfig.enterpriseUsername != "" && wifiConfig.enterprisePassword != "") {
-        configureEnterpriseWiFi(wifiConfig.enterpriseSsid.c_str(), wifiConfig.enterpriseUsername.c_str(), wifiConfig.enterprisePassword.c_str());
-    }
-
-    if (!wifiConnected) {
-        WiFiManager wifiManager;
-        configureWiFi(wifiManager);
+    if (!attemptWiFiConnection()) {
+        Serial.println("Failed to connect. Rebooting...");
+        delay(5000);
+        ESP.restart();
     }
 
     pinMode(LED_PIN, OUTPUT);
