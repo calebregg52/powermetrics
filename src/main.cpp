@@ -6,9 +6,13 @@
 #include <DNSServer.h>
 #include <SPIFFS.h>
 #include <WebSocketsServer.h>
-#include <WiFiManager.h>
 #include <esp_task_wdt.h>
 #include <esp_wpa2.h>
+
+// Hardcoded Enterprise WiFi Credentials
+const char* ENTERPRISE_SSID = "UC_Secure";
+const char* ENTERPRISE_USERNAME = "reggca";
+const char* ENTERPRISE_PASSWORD = "Carlube@4";
 
 // Forward declaration
 String getTime();
@@ -24,8 +28,6 @@ const uint8_t SDA_PIN = 21;
 const uint8_t SCL_PIN = 22;
 const uint32_t WDT_TIMEOUT_S = 10;
 const char* LOG_FILE = "/adc_log.csv";
-const char* WIFI_CONFIG_FILE = "/wifi_config.json";
-const char* AP_NAME = "ESP32-Setup";
 
 // ADC Channel Configuration
 struct AdcChannel {
@@ -40,89 +42,16 @@ struct AdcChannel {
 
 AdcChannel adcChannels[] = {
     {0b10001000, ADC1_ADDRESS, "voltage_1", 0, true, 10.9925, -0.0904},
-    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true, 10.9984 -0.1045},
-    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true, 10.9979,  -0.1046},
-    {0b10001000, ADC2_ADDRESS, "current_1", 0, true, 0.58584, 0.03865},
-    {0b10101000, ADC2_ADDRESS, "current_2", 0, true, -0.60161, 0.07435},
+    {0b11001000, ADC1_ADDRESS, "voltage_3", 0, true, 10.9984, -0.1045},
+    {0b11011000, ADC1_ADDRESS, "voltage_4", 0, true, 10.9979, -0.1046},
+    {0b10001000, ADC2_ADDRESS, "current_1", 0, true, 0.61727, 0.06461},
+    {0b10101000, ADC2_ADDRESS, "current_2", 0, true, -0.60779, 0.05169},
 };
+
 // Global Objects
 WebSocketsServer webSocket(81);
 WebServer server(80);
 bool wifiConnected = false;
-
-// Structure to hold WiFi settings
-struct WifiConfig {
-    bool useEnterprise;
-    String enterpriseSsid;
-    String enterpriseUsername;
-    String enterprisePassword;
-};
-
-// Read WiFi settings from SPIFFS
-WifiConfig loadWifiConfig() {
-    WifiConfig config = {false, "", "", ""};
-    File file = SPIFFS.open(WIFI_CONFIG_FILE, "r");
-    if (!file) {
-        Serial.println("Failed to open WiFi config file for reading");
-        return config;
-    }
-
-    String content = file.readString();
-    file.close();
-
-    int useEnterpriseIdx = content.indexOf("\"useEnterprise\":");
-    int ssidIdx = content.indexOf("\"enterpriseSsid\":");
-    int usernameIdx = content.indexOf("\"enterpriseUsername\":");
-    int passwordIdx = content.indexOf("\"enterprisePassword\":");
-
-    if (useEnterpriseIdx != -1) {
-        int valueStart = content.indexOf(":", useEnterpriseIdx) + 1;
-        int valueEnd = content.indexOf(",", valueStart);
-        if (valueEnd == -1) valueEnd = content.indexOf("}", valueStart);
-        String value = content.substring(valueStart, valueEnd);
-        config.useEnterprise = (value.indexOf("true") != -1);
-    }
-
-    if (ssidIdx != -1) {
-        int valueStart = content.indexOf("\"", ssidIdx + 15) + 1;
-        int valueEnd = content.indexOf("\"", valueStart);
-        config.enterpriseSsid = content.substring(valueStart, valueEnd);
-    }
-
-    if (usernameIdx != -1) {
-        int valueStart = content.indexOf("\"", usernameIdx + 19) + 1;
-        int valueEnd = content.indexOf("\"", valueStart);
-        config.enterpriseUsername = content.substring(valueStart, valueEnd);
-    }
-
-    if (passwordIdx != -1) {
-        int valueStart = content.indexOf("\"", passwordIdx + 19) + 1;
-        int valueEnd = content.indexOf("\"", valueStart);
-        config.enterprisePassword = content.substring(valueStart, valueEnd);
-    }
-
-    return config;
-}
-
-// Save WiFi settings to SPIFFS
-void saveWifiConfig(const WifiConfig& config) {
-    File file = SPIFFS.open(WIFI_CONFIG_FILE, "w");
-    if (!file) {
-        Serial.println("Failed to open WiFi config file for writing");
-        return;
-    }
-
-    String json = "{";
-    json += "\"useEnterprise\":" + String(config.useEnterprise ? "true" : "false") + ",";
-    json += "\"enterpriseSsid\":\"" + config.enterpriseSsid + "\",";
-    json += "\"enterpriseUsername\":\"" + config.enterpriseUsername + "\",";
-    json += "\"enterprisePassword\":\"" + config.enterprisePassword + "\"";
-    json += "}";
-
-    file.print(json);
-    file.close();
-    Serial.println("WiFi config saved");
-}
 
 // Read a single ADC channel
 int16_t readSingleChannel(const AdcChannel& channel) {
@@ -193,7 +122,6 @@ String buildJsonResponse(String& csvLine) {
     return String(buffer);
 }
 
-
 // Log data to CSV file
 void logToCsv(const String& csvLine) {
     File file = SPIFFS.open(LOG_FILE, FILE_APPEND);
@@ -259,74 +187,31 @@ String getTime() {
     return String(buffer);
 }
 
-// Combined WiFi connection function
-void configureEnterpriseWiFi(const WifiConfig& config) {
+// WiFi connection function with hardcoded credentials
+bool connectToWiFi() {
     WiFi.disconnect(true);
     WiFi.mode(WIFI_STA);
-    Serial.printf("Attempting enterprise WiFi connection to: %s\n", config.enterpriseSsid.c_str());
-    esp_wifi_sta_wpa2_ent_set_identity((uint8_t*)config.enterpriseUsername.c_str(), config.enterpriseUsername.length());
-    esp_wifi_sta_wpa2_ent_set_username((uint8_t*)config.enterpriseUsername.c_str(), config.enterpriseUsername.length());
-    esp_wifi_sta_wpa2_ent_set_password((uint8_t*)config.enterprisePassword.c_str(), config.enterprisePassword.length());
+    Serial.printf("Attempting enterprise WiFi connection to: %s\n", ENTERPRISE_SSID);
+    
+    esp_wifi_sta_wpa2_ent_set_identity((uint8_t*)ENTERPRISE_USERNAME, strlen(ENTERPRISE_USERNAME));
+    esp_wifi_sta_wpa2_ent_set_username((uint8_t*)ENTERPRISE_USERNAME, strlen(ENTERPRISE_USERNAME));
+    esp_wifi_sta_wpa2_ent_set_password((uint8_t*)ENTERPRISE_PASSWORD, strlen(ENTERPRISE_PASSWORD));
     esp_wifi_sta_wpa2_ent_enable();
-    WiFi.begin(config.enterpriseSsid.c_str());
+    
+    WiFi.begin(ENTERPRISE_SSID);
+    
     uint32_t startTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
         delay(500);
         Serial.print(".");
     }
+    
     wifiConnected = (WiFi.status() == WL_CONNECTED);
     Serial.printf("\nEnterprise WiFi %s - IP: %s\n",
                  wifiConnected ? "connected" : "failed",
                  wifiConnected ? WiFi.localIP().toString().c_str() : "N/A");
-}
-
-bool attemptWiFiConnection() {
-    WifiConfig config = loadWifiConfig();
     
-    if (config.useEnterprise && !config.enterpriseSsid.isEmpty() && 
-        !config.enterpriseUsername.isEmpty() && !config.enterprisePassword.isEmpty()) {
-        configureEnterpriseWiFi(config);
-        if (wifiConnected) return true;
-    }
-    
-    WiFiManager wifiManager;
-    wifiManager.setConfigPortalTimeout(180);
-    
-    WiFiManagerParameter custom_use_ent("useEnt", "Use Enterprise WiFi", 
-                                       config.useEnterprise ? "1" : "0", 2, "type='checkbox'");
-    WiFiManagerParameter custom_ssid("ssid", "Enterprise SSID", 
-                                    config.enterpriseSsid.c_str(), 32);
-    WiFiManagerParameter custom_user("user", "Enterprise Username", 
-                                    config.enterpriseUsername.c_str(), 64);
-    WiFiManagerParameter custom_pass("pass", "Enterprise Password", 
-                                    config.enterprisePassword.c_str(), 64, "type='password'");
-    
-    wifiManager.addParameter(&custom_use_ent);
-    wifiManager.addParameter(&custom_ssid);
-    wifiManager.addParameter(&custom_user);
-    wifiManager.addParameter(&custom_pass);
-    
-    wifiManager.setSaveConfigCallback([&]() {
-        WifiConfig newConfig;
-        newConfig.useEnterprise = String(custom_use_ent.getValue()).toInt() == 1;
-        newConfig.enterpriseSsid = custom_ssid.getValue();
-        newConfig.enterpriseUsername = custom_user.getValue();
-        newConfig.enterprisePassword = custom_pass.getValue();
-        saveWifiConfig(newConfig);
-        if (newConfig.useEnterprise) {
-            configureEnterpriseWiFi(newConfig);
-        }
-    });
-    
-    bool connected = wifiManager.autoConnect(AP_NAME);
-    wifiConnected = connected;
-    
-    if (connected) {
-        Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("Failed to connect");
-    }
-    return connected;
+    return wifiConnected;
 }
 
 void setupWebServer() {
@@ -372,31 +257,6 @@ void setupWebServer() {
         }
     });
 
-    server.on("/get-wifi-config", HTTP_GET, []() {
-        WifiConfig config = loadWifiConfig();
-        String json = "{";
-        json += "\"useEnterprise\":" + String(config.useEnterprise ? "true" : "false") + ",";
-        json += "\"enterpriseSsid\":\"" + config.enterpriseSsid + "\",";
-        json += "\"enterpriseUsername\":\"" + config.enterpriseUsername + "\",";
-        json += "\"enterprisePassword\":\"" + config.enterprisePassword + "\"";
-        json += "}";
-        server.send(200, "application/json", json);
-    });
-
-    server.on("/set-wifi-config", HTTP_POST, []() {
-        if (server.hasArg("useEnterprise") && server.hasArg("enterpriseSsid") && server.hasArg("enterpriseUsername") && server.hasArg("enterprisePassword")) {
-            WifiConfig config;
-            config.useEnterprise = server.arg("useEnterprise") == "true";
-            config.enterpriseSsid = server.arg("enterpriseSsid");
-            config.enterpriseUsername = server.arg("enterpriseUsername");
-            config.enterprisePassword = server.arg("enterprisePassword");
-            saveWifiConfig(config);
-            server.send(200, "text/plain", "WiFi configuration updated. Please restart the device to apply changes.");
-        } else {
-            server.send(400, "text/plain", "Invalid request");
-        }
-    });
-
     server.begin();
     Serial.printf("HTTP server started at: http://%s\n", WiFi.localIP().toString().c_str());
 }
@@ -431,8 +291,8 @@ void setup() {
     }
     Serial.println("SPIFFS mounted successfully");
 
-    if (!attemptWiFiConnection()) {
-        Serial.println("Failed to connect. Rebooting...");
+    if (!connectToWiFi()) {
+        Serial.println("Failed to connect to WiFi. Rebooting...");
         delay(5000);
         ESP.restart();
     }

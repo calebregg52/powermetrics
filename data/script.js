@@ -141,44 +141,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   socket.onmessage = (event) => {
-      try {
-          const data = JSON.parse(event.data);
-          const voltageValues = [data.voltage_1 || 0, data.voltage_3 || 0, data.voltage_4 || 0];
-          const currentValues = [data.current_1 || 0, data.current_2 || 0];
+    try {
+        const data = JSON.parse(event.data);
+        const voltageValues = [data.voltage_1 || 0, data.voltage_3 || 0, data.voltage_4 || 0];
+        const currentValues = [data.current_1 || 0, data.current_2 || 0];
 
-          console.log("WebSocket Data:", data);
-          console.log("Current Values:", currentValues);
+        console.log("WebSocket Data:", data);
+        console.log("Current Values:", currentValues);
 
-          voltageValues.forEach((v, i) => {
-              const idNum = i === 0 ? 1 : i === 1 ? 3 : 4;
-              const threshold = parseFloat(document.getElementById(`volt-threshold-${idNum}`).value) || Infinity;
-              document.getElementById(`volt-alert-${idNum}`).textContent = v > threshold ? "Over Voltage!" : "";
-              updateStats(stats.voltage[i], v, `volt-stats-${idNum}`);
-          });
+        // Voltage updates (unchanged)
+        voltageValues.forEach((v, i) => {
+            const idNum = i === 0 ? 1 : i === 1 ? 3 : 4;
+            const threshold = parseFloat(document.getElementById(`volt-threshold-${idNum}`).value) || Infinity;
+            document.getElementById(`volt-alert-${idNum}`).textContent = v > threshold ? "Over Voltage!" : "";
+            updateStats(stats.voltage[i], v, `volt-stats-${idNum}`);
+        });
 
-          currentValues.forEach((c, i) => {
-              const threshold = parseFloat(document.getElementById(`curr-threshold-${i + 1}`).value) || Infinity;
-              document.getElementById(`curr-alert-${i + 1}`).textContent = c > (threshold / 1000) ? "Over Current!" : "";
-              updateStats(stats.current[i], c * 1000, `curr-stats-${i + 1}`);
-              document.getElementById(`current-value-${i + 1}`).textContent = `${(c * 1000).toFixed(3)} mA`;
-          });
+        // Current updates - only update gauges if not paused
+        if (!charts.current.isPaused) {
+            currentValues.forEach((c, i) => {
+                const threshold = parseFloat(document.getElementById(`curr-threshold-${i + 1}`).value) || Infinity;
+                document.getElementById(`curr-alert-${i + 1}`).textContent = c > (threshold / 1000) ? "Over Current!" : "";
+                updateStats(stats.current[i], c * 1000, `curr-stats-${i + 1}`);
+                document.getElementById(`current-value-${i + 1}`).textContent = `${(c * 1000).toFixed(3)} mA`;
+            });
+        }
 
-          if (!charts.voltage.isPaused) {
-              const vTrigger = voltageValues[charts.voltage.triggerChannel];
-              if (!charts.voltage.triggered && vTrigger >= charts.voltage.triggerLevel) charts.voltage.triggered = true;
-              if (charts.voltage.triggered) updateChart(charts.voltage, voltageValues, 'voltage-value-');
-          }
-          if (!charts.current.isPaused) {
-              const cTrigger = currentValues[charts.current.triggerChannel];
-              if (!charts.current.triggered && cTrigger >= charts.current.triggerLevel) charts.current.triggered = true;
-              if (charts.current.triggered) updateChart(charts.current, currentValues, 'current-value-');
-          }
+        // Chart updates
+        if (!charts.voltage.isPaused) {
+            const vTrigger = voltageValues[charts.voltage.triggerChannel];
+            if (!charts.voltage.triggered && vTrigger >= charts.voltage.triggerLevel) charts.voltage.triggered = true;
+            if (charts.voltage.triggered) updateChart(charts.voltage, voltageValues, 'voltage-value-');
+        }
+        if (!charts.current.isPaused) {
+            const cTrigger = currentValues[charts.current.triggerChannel];
+            if (!charts.current.triggered && cTrigger >= charts.current.triggerLevel) charts.current.triggered = true;
+            if (charts.current.triggered) updateChart(charts.current, currentValues, 'current-value-');
+        }
 
-          t += dt;
-      } catch (error) {
-          console.error("Error parsing WebSocket data:", error);
-      }
-  };
+        t += dt;
+    } catch (error) {
+        console.error("Error parsing WebSocket data:", error);
+    }
+};
 
   function createDatasets(count, offset, prefix) {
       return Array.from({ length: count }, (_, i) => ({
