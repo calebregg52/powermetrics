@@ -1,0 +1,3 @@
+Record=TopLevelDocument|FileName=Amp_Measurement.SchDoc|SheetNumber=1
+Record=NoMainPathDocument|SourceDocument=Amp_Measurement.SchDoc|FileName=Data-Power.SchDoc|SheetNumber=3
+Record=NoMainPathDocument|SourceDocument=Amp_Measurement.SchDoc|FileName=Volt_Measurement.SchDoc|SheetNumber=2
