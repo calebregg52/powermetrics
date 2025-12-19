@@ -10,9 +10,9 @@
 #include <esp_wpa2.h>
 
 // Hardcoded Enterprise WiFi Credentials
-const char* ENTERPRISE_SSID = "UC_Secure";
-const char* ENTERPRISE_USERNAME = "reggca";
-const char* ENTERPRISE_PASSWORD = "Carlube@4";
+const char* ENTERPRISE_SSID = "";
+const char* ENTERPRISE_USERNAME = "";
+const char* ENTERPRISE_PASSWORD = "";
 
 // Forward declaration
 String getTime();
